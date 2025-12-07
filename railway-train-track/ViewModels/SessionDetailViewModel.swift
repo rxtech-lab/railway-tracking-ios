@@ -8,6 +8,7 @@
 import CoreLocation
 import Foundation
 import MapKit
+import QuartzCore
 import SwiftData
 import SwiftUI
 
@@ -84,6 +85,8 @@ final class SessionDetailViewModel {
     private var playbackTimer: Timer?
     private var stationPlaybackTimer: Timer?
     private var timeBasedPlaybackTimer: Timer?
+    private var displayLink: CADisplayLink?
+    private var lastDisplayLinkTimestamp: CFTimeInterval = 0
 
     init(
         session: TrackingSession,
@@ -423,21 +426,56 @@ final class SessionDetailViewModel {
         showPlaybackMarker = true
         positionUpdateFrequency = currentPositionUpdateFrequency
 
-        // Use Timer with specified frequency
-        timeBasedPlaybackTimer = Timer.scheduledTimer(
-            withTimeInterval: currentPositionUpdateFrequency,
-            repeats: true
-        ) { [weak self] _ in
-            self?.updatePlaybackFrame()
-        }
-
         // Initial position update
         interpolatedCoordinate = calculateInterpolatedPosition()
+
+        // Use DisplayLink for smooth 60fps animation
+        lastDisplayLinkTimestamp = 0
+        displayLink = CADisplayLink(target: self, selector: #selector(displayLinkUpdate))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+
+    @objc private func displayLinkUpdate(_ link: CADisplayLink) {
+        guard isPlayingAnimation else {
+            stopDisplayLink()
+            return
+        }
+
+        // Calculate delta time
+        let deltaTime: Double
+        if lastDisplayLinkTimestamp == 0 {
+            deltaTime = link.targetTimestamp - link.timestamp
+        } else {
+            deltaTime = link.targetTimestamp - lastDisplayLinkTimestamp
+        }
+        lastDisplayLinkTimestamp = link.targetTimestamp
+
+        // Advance elapsed time
+        playbackElapsedTime += deltaTime
+
+        // Check completion
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = playbackDurationSeconds
+            interpolatedCoordinate = calculateInterpolatedPosition()
+            pauseTimeBasedPlayback()
+            showPlaybackMarker = false
+            return
+        }
+
+        // Update position every frame
+        interpolatedCoordinate = calculateInterpolatedPosition()
+    }
+
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+        lastDisplayLinkTimestamp = 0
     }
 
     /// Pause time-based playback
     func pauseTimeBasedPlayback() {
         isPlayingAnimation = false
+        stopDisplayLink()
         timeBasedPlaybackTimer?.invalidate()
         timeBasedPlaybackTimer = nil
     }
@@ -694,5 +732,6 @@ final class SessionDetailViewModel {
         playbackTimer?.invalidate()
         stationPlaybackTimer?.invalidate()
         timeBasedPlaybackTimer?.invalidate()
+        displayLink?.invalidate()
     }
 }

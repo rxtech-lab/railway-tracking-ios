@@ -42,14 +42,6 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
     /// Additional map content (annotations, markers, etc.)
     @MapContentBuilder let additionalContent: () -> Content
 
-    // Animated marker state (separate lat/lon for SwiftUI animation)
-    @State private var markerLatitude: Double = 0
-    @State private var markerLongitude: Double = 0
-
-    private var markerCoordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: markerLatitude, longitude: markerLongitude)
-    }
-
     enum MarkerStyle {
         case currentPosition  // Red dot with white border (playback)
         case liveTracking     // Blue dot with white border (active session)
@@ -125,9 +117,9 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
                 }
             }
 
-            // Animated current position marker
-            if showCurrentPositionMarker && currentCoordinate != nil && markerStyle != .none {
-                Annotation("", coordinate: markerCoordinate) {
+            // Current position marker (updated every frame via DisplayLink)
+            if showCurrentPositionMarker, let coord = currentCoordinate, markerStyle != .none {
+                Annotation("", coordinate: coord) {
                     ZStack {
                         Circle()
                             .fill(.white)
@@ -146,28 +138,6 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
             MapCompass()
             MapScaleView()
             MapUserLocationButton()
-        }
-        .mapCameraKeyframeAnimator(trigger: currentCoordinate?.latitude) { initialCamera in
-            KeyframeTrack(\.centerCoordinate) {
-                if let coord = currentCoordinate {
-                    CubicKeyframe(coord, duration: animationDuration)
-                } else {
-                    CubicKeyframe(initialCamera.centerCoordinate, duration: animationDuration)
-                }
-            }
-        }
-        .onChange(of: currentCoordinate?.latitude) { _, _ in
-            guard let coord = currentCoordinate else { return }
-            withAnimation(.easeInOut(duration: animationDuration)) {
-                markerLatitude = coord.latitude
-                markerLongitude = coord.longitude
-            }
-        }
-        .onAppear {
-            if let coord = currentCoordinate {
-                markerLatitude = coord.latitude
-                markerLongitude = coord.longitude
-            }
         }
     }
 }
