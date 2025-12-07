@@ -22,9 +22,17 @@ struct SessionDetailView: View {
 
     var body: some View {
         ZStack {
-            // Background Map showing full route
-            SessionMapView(
-                viewModel: viewModel
+            // Background Map using unified AnimatedTrackingMapView
+            AnimatedTrackingMapView(
+                cameraPosition: $viewModel.mapCameraPosition,
+                currentCoordinate: viewModel.interpolatedCoordinate,
+                animationDuration: viewModel.playbackAnimationDuration,
+                routeCoordinates: viewModel.session.coordinates,
+                traveledCoordinates: viewModel.traveledCoordinatesForPlayback,
+                markers: viewModel.staticMarkers,
+                railwayRoutes: viewModel.stationDataViewModel.railwayRoutes,
+                markerStyle: .currentPosition,
+                showCurrentPositionMarker: viewModel.showPlaybackMarker
             )
             .ignoresSafeArea()
         }
@@ -161,143 +169,6 @@ struct SheetContentView: View {
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-// MARK: - Session Map View
-
-struct SessionMapView: View {
-    @Bindable var viewModel: SessionDetailViewModel
-
-    // Animated marker state (separate lat/lon for SwiftUI animation)
-    @State private var markerLatitude: Double = 0
-    @State private var markerLongitude: Double = 0
-
-    private var markerCoordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: markerLatitude, longitude: markerLongitude)
-    }
-
-    // Computed traveled coordinates including animated position
-    private var traveledCoordinates: [CLLocationCoordinate2D] {
-        guard viewModel.selectedLocationIndex > 0 || markerLatitude != 0 else { return [] }
-        var coords = Array(viewModel.session.coordinates.prefix(viewModel.selectedLocationIndex + 1))
-        // Append animated marker position if it differs from last point
-        if let lastCoord = coords.last,
-           lastCoord.latitude != markerLatitude || lastCoord.longitude != markerLongitude
-        {
-            coords.append(markerCoordinate)
-        }
-        return coords
-    }
-
-    var body: some View {
-        Map(position: $viewModel.mapCameraPosition) {
-            // Full route polyline
-            if viewModel.session.coordinates.count > 1 {
-                MapPolyline(coordinates: viewModel.session.coordinates)
-                    .stroke(.blue.opacity(0.5), lineWidth: 3)
-            }
-
-            // Traveled route (up to current playback position with animation)
-            if traveledCoordinates.count > 1 {
-                MapPolyline(coordinates: traveledCoordinates)
-                    .stroke(.blue, lineWidth: 4)
-            }
-
-            // Railway track polylines
-            ForEach(Array(viewModel.stationDataViewModel.railwayRoutes.enumerated()), id: \.offset) { _, route in
-                MapPolyline(coordinates: route)
-                    .stroke(.brown, style: StrokeStyle(lineWidth: 3, dash: [5, 3]))
-            }
-
-            // Station markers
-            ForEach(viewModel.sortedStationEvents) { event in
-                if let station = event.station {
-                    Annotation(station.name, coordinate: station.coordinate) {
-                        ZStack {
-                            Circle()
-                                .fill(.orange)
-                                .frame(width: 24, height: 24)
-                            Image(systemName: "train.side.front.car")
-                                .font(.system(size: 12))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-            }
-
-            // Current position marker (animated)
-            if viewModel.currentLocationPoint != nil {
-                Annotation("Current", coordinate: markerCoordinate) {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 20, height: 20)
-                        Circle()
-                            .fill(.red)
-                            .frame(width: 14, height: 14)
-                    }
-                }
-            }
-
-            // Start marker
-            if let first = viewModel.sortedLocationPoints.first {
-                Annotation("Start", coordinate: first.coordinate) {
-                    ZStack {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 20, height: 20)
-                        Image(systemName: "flag.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white)
-                    }
-                }
-            }
-
-            // End marker
-            if let last = viewModel.sortedLocationPoints.last,
-               viewModel.sortedLocationPoints.count > 1
-            {
-                Annotation("End", coordinate: last.coordinate) {
-                    ZStack {
-                        Circle()
-                            .fill(.red)
-                            .frame(width: 20, height: 20)
-                        Image(systemName: "flag.checkered")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.white)
-                    }
-                }
-            }
-        }
-        .mapControls {
-            MapCompass()
-            MapScaleView()
-            MapUserLocationButton()
-        }
-        .mapCameraKeyframeAnimator(trigger: viewModel.currentLocationPoint?.id) { initialCamera in
-            KeyframeTrack(\.centerCoordinate) {
-                if let point = viewModel.currentLocationPoint {
-                    CubicKeyframe(point.coordinate, duration: 0.1 / viewModel.playbackSpeed)
-                } else {
-                    CubicKeyframe(initialCamera.centerCoordinate, duration: 0.1)
-                }
-            }
-        }
-        .onChange(of: viewModel.currentLocationPoint?.id) { _, _ in
-            guard let point = viewModel.currentLocationPoint else { return }
-            let duration = 0.1 / viewModel.playbackSpeed
-            withAnimation(.linear(duration: duration)) {
-                markerLatitude = point.coordinate.latitude
-                markerLongitude = point.coordinate.longitude
-            }
-        }
-        .onAppear {
-            if let point = viewModel.currentLocationPoint {
-                markerLatitude = point.coordinate.latitude
-                markerLongitude = point.coordinate.longitude
             }
         }
     }

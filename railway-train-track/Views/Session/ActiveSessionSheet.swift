@@ -13,12 +13,6 @@ struct ActiveSessionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let session: TrackingSession
     @State private var mapCameraPosition: MapCameraPosition = .automatic
-    @State private var markerLatitude: Double = 0
-    @State private var markerLongitude: Double = 0
-
-    private var markerCoordinate: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: markerLatitude, longitude: markerLongitude)
-    }
 
     var body: some View {
         NavigationStack {
@@ -52,46 +46,21 @@ struct ActiveSessionSheet: View {
                 // Map Section
                 if viewModel.lastLocation != nil {
                     Section("Current Location") {
-                        Map(position: $mapCameraPosition) {
-                            // Route polyline (last 20 points)
-                            if viewModel.recentRouteCoordinates.count > 1 {
-                                MapPolyline(coordinates: viewModel.recentRouteCoordinates)
-                                    .stroke(.blue.opacity(0.7), lineWidth: 3)
-                            }
-
-                            // Current location marker (uses animated coordinates)
-                            Annotation("Current", coordinate: markerCoordinate) {
-                                Circle()
-                                    .fill(.blue)
-                                    .frame(width: 16, height: 16)
-                                    .overlay(
-                                        Circle()
-                                            .stroke(.white, lineWidth: 2)
-                                    )
-                            }
-                        }
+                        AnimatedTrackingMapView(
+                            cameraPosition: $mapCameraPosition,
+                            currentCoordinate: viewModel.lastLocation?.coordinate,
+                            animationDuration: 0.5,
+                            routeCoordinates: viewModel.recentRouteCoordinates,
+                            traveledCoordinates: [],
+                            markers: [],
+                            railwayRoutes: [],
+                            markerStyle: .liveTracking,
+                            showCurrentPositionMarker: true
+                        )
                         .frame(height: 200)
                         .listRowInsets(EdgeInsets())
-                        .mapCameraKeyframeAnimator(trigger: viewModel.lastLocation) { initialCamera in
-                            KeyframeTrack(\.centerCoordinate) {
-                                if let location = viewModel.lastLocation {
-                                    CubicKeyframe(location.coordinate, duration: 0.5)
-                                } else {
-                                    CubicKeyframe(initialCamera.centerCoordinate, duration: 0.5)
-                                }
-                            }
-                        }
-                        .onChange(of: viewModel.lastLocation) { _, newLocation in
-                            guard let location = newLocation else { return }
-                            withAnimation(.easeInOut(duration: 0.5)) {
-                                markerLatitude = location.coordinate.latitude
-                                markerLongitude = location.coordinate.longitude
-                            }
-                        }
                         .onAppear {
                             if let location = viewModel.lastLocation {
-                                markerLatitude = location.coordinate.latitude
-                                markerLongitude = location.coordinate.longitude
                                 mapCameraPosition = .camera(MapCamera(
                                     centerCoordinate: location.coordinate,
                                     distance: 1000

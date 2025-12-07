@@ -24,10 +24,12 @@ The Xcode project file is at `railway-train-track.xcodeproj`.
 ## Architecture
 
 **MVVM with @Observable (iOS 17+)**
+
 - ViewModels use `@Observable` macro, views use `@Bindable` for two-way binding
 - SwiftData models in `Models/`, ViewModels in `ViewModels/`, SwiftUI views in `Views/`
 
 **Key Data Flow:**
+
 1. `LocationManager` → async location updates via `CLLocationUpdate.liveUpdates()`
 2. `TrackingViewModel` → creates `LocationPoint` records, saves to SwiftData
 3. `SessionDetailViewModel` → displays route on map, triggers station analysis
@@ -36,21 +38,23 @@ The Xcode project file is at `railway-train-track.xcodeproj`.
 6. Export services → CSV, JSON, and video output with async/await
 
 **SwiftData Models:**
+
 - `TrackingSession` (1:many) → `LocationPoint` and `StationPassEvent`
 - `TrainStation` (keyed by osmId from OpenStreetMap)
 
 ## Key Services
 
-| Service | Purpose |
-|---------|---------|
-| `LocationManager` | CoreLocation wrapper with background tracking support |
-| `TrainStationService` | Overpass API queries for train stations in bounding box |
-| `StationAnalysisService` | Proximity-based station pass detection algorithm |
-| `VideoExporter` | AVFoundation-based animated route video rendering |
+| Service                  | Purpose                                                 |
+| ------------------------ | ------------------------------------------------------- |
+| `LocationManager`        | CoreLocation wrapper with background tracking support   |
+| `TrainStationService`    | Overpass API queries for train stations in bounding box |
+| `StationAnalysisService` | Proximity-based station pass detection algorithm        |
+| `VideoExporter`          | AVFoundation-based animated route video rendering       |
 
 ## Background Location
 
 The app uses background location updates. Key configuration:
+
 - `Info.plist` contains location permission strings and background modes
 - `CLBackgroundActivitySession()` maintains location updates when backgrounded
 - Recording interval is user-configurable (0.5-10 seconds)
@@ -60,3 +64,7 @@ The app uses background location updates. Key configuration:
 - SwiftData saves every 10 location points to batch writes
 - Export operations use async/await with progress callbacks
 - Map playback uses Timer-based frame stepping
+
+## Bug detection
+
+when bugs is hard to locate, add debug print and let user run the app and give you the debug log to locate the issue.

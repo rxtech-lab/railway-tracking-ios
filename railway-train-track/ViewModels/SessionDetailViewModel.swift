@@ -5,10 +5,12 @@
 //  Created by Qiwei Li on 12/6/25.
 //
 
+import CoreLocation
 import Foundation
-import SwiftUI
-import SwiftData
 import MapKit
+import QuartzCore
+import SwiftData
+import SwiftUI
 
 enum SessionTab: String, CaseIterable {
     case locations = "Locations"
@@ -43,10 +45,16 @@ final class SessionDetailViewModel {
     // Tab state
     var selectedTab: SessionTab = .locations
 
-    // Location playback state
+    // Location playback state (legacy index-based)
     var selectedLocationIndex: Int = 0
     var isPlayingAnimation: Bool = false
     var playbackSpeed: Double = 1.0
+    var showPlaybackMarker: Bool = false
+
+    // Time-based playback state
+    var playbackDurationSeconds: Double = 30.0  // User-editable total playback duration
+    var playbackElapsedTime: Double = 0.0       // Current elapsed time in playback
+    var interpolatedCoordinate: CLLocationCoordinate2D?  // Smoothly interpolated position
 
     // Sheet state
     var sheetContent: SheetContent = .tabBar
@@ -76,6 +84,10 @@ final class SessionDetailViewModel {
     private var modelContext: ModelContext?
     private var playbackTimer: Timer?
     private var stationPlaybackTimer: Timer?
+
+    // Display link for smooth time-based playback
+    private var displayLink: CADisplayLink?
+    private var lastFrameTime: CFTimeInterval = 0
 
     init(
         session: TrackingSession,
@@ -133,6 +145,109 @@ final class SessionDetailViewModel {
         sortedStationEvents.count
     }
 
+    // MARK: - Time-Based Playback Computed Properties
+
+    /// Duration of the original journey in seconds
+    var journeyDuration: TimeInterval {
+        let points = sortedLocationPoints
+        guard let first = points.first?.timestamp,
+              let last = points.last?.timestamp else {
+            return 0
+        }
+        return last.timeIntervalSince(first)
+    }
+
+    /// Current playback progress (0.0 to 1.0)
+    var currentPlaybackProgress: Double {
+        guard playbackDurationSeconds > 0 else { return 0 }
+        return min(1.0, playbackElapsedTime / playbackDurationSeconds)
+    }
+
+    /// Formatted elapsed time display (e.g., "0:15 / 0:30")
+    var formattedPlaybackTime: String {
+        let elapsed = Int(playbackElapsedTime)
+        let total = Int(playbackDurationSeconds)
+        return String(format: "%d:%02d / %d:%02d", elapsed / 60, elapsed % 60, total / 60, total % 60)
+    }
+
+    /// Formatted original journey duration
+    var formattedJourneyDuration: String {
+        let duration = journeyDuration
+        let hours = Int(duration) / 3600
+        let minutes = (Int(duration) % 3600) / 60
+        let seconds = Int(duration) % 60
+        if hours > 0 {
+            return String(format: "%dh %dm %ds", hours, minutes, seconds)
+        } else if minutes > 0 {
+            return String(format: "%dm %ds", minutes, seconds)
+        } else {
+            return String(format: "%ds", seconds)
+        }
+    }
+
+    /// Animation duration for smooth transitions
+    var playbackAnimationDuration: Double {
+        // Smooth transitions - roughly 1/60s per frame
+        0.016
+    }
+
+    /// Traveled coordinates up to the current interpolated position
+    var traveledCoordinatesForPlayback: [CLLocationCoordinate2D] {
+        let points = sortedLocationPoints
+        guard points.count >= 2,
+              let journeyStart = points.first?.timestamp else {
+            return []
+        }
+
+        let targetTimestamp = calculateTargetTimestamp()
+
+        // Collect all points up to the target time
+        var coords: [CLLocationCoordinate2D] = []
+        for point in points {
+            if point.timestamp <= targetTimestamp {
+                coords.append(point.coordinate)
+            } else {
+                break
+            }
+        }
+
+        // Append interpolated position if different from last point
+        if let interpolated = interpolatedCoordinate {
+            if coords.isEmpty {
+                coords.append(interpolated)
+            } else if let last = coords.last,
+                      last.latitude != interpolated.latitude || last.longitude != interpolated.longitude {
+                coords.append(interpolated)
+            }
+        }
+
+        return coords
+    }
+
+    /// Static markers for the map (start, end, stations)
+    var staticMarkers: [TrackingPoint] {
+        var markers: [TrackingPoint] = []
+
+        // Start marker
+        if let first = sortedLocationPoints.first {
+            markers.append(.startMarker(from: first))
+        }
+
+        // End marker (always show title since we're using time-based playback)
+        if let last = sortedLocationPoints.last, sortedLocationPoints.count > 1 {
+            markers.append(.endMarker(from: last, showTitle: true))
+        }
+
+        // Station markers
+        for event in sortedStationEvents {
+            if let station = event.station {
+                markers.append(.from(station: station, timestamp: event.timestamp))
+            }
+        }
+
+        return markers
+    }
+
     // MARK: - Map Region
 
     private func setupInitialMapRegion() {
@@ -177,9 +292,16 @@ final class SessionDetailViewModel {
 
     func startPlayback() {
         guard !sortedLocationPoints.isEmpty else { return }
-        isPlayingAnimation = true
 
-        let interval = (1.0 / playbackSpeed) * 0.1 // 10 points per second at 1x speed
+        // Reset to beginning if at the end
+        if selectedLocationIndex >= totalLocationPoints - 1 {
+            selectedLocationIndex = 0
+        }
+
+        isPlayingAnimation = true
+        showPlaybackMarker = true
+
+        let interval = (1.0 / playbackSpeed) * 0.3 // ~3 points per second at 1x, allows smooth animation overlap
         playbackTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.advancePlayback()
         }
@@ -201,6 +323,7 @@ final class SessionDetailViewModel {
 
     func seekTo(index: Int) {
         selectedLocationIndex = max(0, min(index, totalLocationPoints - 1))
+        showPlaybackMarker = true
         updateMapForCurrentLocation()
     }
 
@@ -218,7 +341,8 @@ final class SessionDetailViewModel {
             // Camera animation handled by mapCameraKeyframeAnimator in view
         } else {
             pausePlayback()
-            selectedLocationIndex = 0
+            showPlaybackMarker = false
+            // Don't reset index here - marker is hidden anyway
         }
     }
 
@@ -227,6 +351,156 @@ final class SessionDetailViewModel {
         mapCameraPosition = .camera(
             MapCamera(centerCoordinate: point.coordinate, distance: 2000)
         )
+    }
+
+    // MARK: - Time-Based Playback
+
+    /// Calculate the target timestamp in the original journey based on playback progress
+    private func calculateTargetTimestamp() -> Date {
+        let points = sortedLocationPoints
+        guard let journeyStart = points.first?.timestamp else {
+            return Date()
+        }
+
+        let targetTimeOffset = journeyDuration * currentPlaybackProgress
+        return journeyStart.addingTimeInterval(targetTimeOffset)
+    }
+
+    /// Calculate the interpolated coordinate based on elapsed playback time
+    func calculateInterpolatedPosition() -> CLLocationCoordinate2D? {
+        let points = sortedLocationPoints
+        guard points.count >= 2,
+              let journeyStart = points.first?.timestamp,
+              journeyDuration > 0 else {
+            return points.first?.coordinate
+        }
+
+        let targetTimestamp = calculateTargetTimestamp()
+
+        // Find the two GPS points to interpolate between
+        var beforePoint: LocationPoint?
+        var afterPoint: LocationPoint?
+
+        for point in points {
+            if point.timestamp <= targetTimestamp {
+                beforePoint = point
+            }
+            if point.timestamp > targetTimestamp {
+                afterPoint = point
+                break
+            }
+        }
+
+        // Handle edge cases
+        guard let before = beforePoint else {
+            return points.first?.coordinate
+        }
+        guard let after = afterPoint else {
+            return points.last?.coordinate
+        }
+
+        // Linear interpolation between the two points
+        let segmentDuration = after.timestamp.timeIntervalSince(before.timestamp)
+        guard segmentDuration > 0 else {
+            return before.coordinate
+        }
+
+        let segmentProgress = targetTimestamp.timeIntervalSince(before.timestamp) / segmentDuration
+
+        let interpolatedLat = before.latitude + (after.latitude - before.latitude) * segmentProgress
+        let interpolatedLon = before.longitude + (after.longitude - before.longitude) * segmentProgress
+
+        return CLLocationCoordinate2D(latitude: interpolatedLat, longitude: interpolatedLon)
+    }
+
+    /// Start time-based playback with smooth 60fps animation
+    func startTimeBasedPlayback() {
+        guard !sortedLocationPoints.isEmpty else { return }
+
+        // Reset if at end
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = 0
+        }
+
+        isPlayingAnimation = true
+        showPlaybackMarker = true
+        lastFrameTime = CACurrentMediaTime()
+
+        // Create display link for smooth 60fps updates
+        displayLink = CADisplayLink(target: self, selector: #selector(updatePlaybackFrame))
+        displayLink?.add(to: .main, forMode: .common)
+    }
+
+    /// Pause time-based playback
+    func pauseTimeBasedPlayback() {
+        isPlayingAnimation = false
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    /// Update playback frame (called by CADisplayLink at ~60fps)
+    @objc private func updatePlaybackFrame() {
+        guard isPlayingAnimation else {
+            displayLink?.invalidate()
+            displayLink = nil
+            return
+        }
+
+        let currentTime = CACurrentMediaTime()
+        let deltaTime = currentTime - lastFrameTime
+        lastFrameTime = currentTime
+
+        // Advance elapsed time based on playback speed
+        playbackElapsedTime += deltaTime * playbackSpeed
+
+        // Update interpolated position
+        interpolatedCoordinate = calculateInterpolatedPosition()
+
+        // Check if playback is complete
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = playbackDurationSeconds
+            pauseTimeBasedPlayback()
+            showPlaybackMarker = false
+        }
+    }
+
+    /// Seek to a specific time in the playback
+    func seekToTime(_ time: Double) {
+        playbackElapsedTime = max(0, min(time, playbackDurationSeconds))
+        interpolatedCoordinate = calculateInterpolatedPosition()
+        showPlaybackMarker = true
+
+        // Update map camera to follow interpolated position
+        if let coord = interpolatedCoordinate {
+            mapCameraPosition = .camera(
+                MapCamera(centerCoordinate: coord, distance: 2000)
+            )
+        }
+    }
+
+    /// Seek to a progress value (0.0 to 1.0)
+    func seekToProgress(_ progress: Double) {
+        seekToTime(progress * playbackDurationSeconds)
+    }
+
+    /// Toggle time-based playback
+    func toggleTimeBasedPlayback() {
+        if isPlayingAnimation {
+            pauseTimeBasedPlayback()
+        } else {
+            startTimeBasedPlayback()
+        }
+    }
+
+    /// Seek to the beginning of playback
+    func seekToBeginningTimeBased() {
+        seekToTime(0)
+    }
+
+    /// Seek to the end of playback
+    func seekToEndTimeBased() {
+        seekToTime(playbackDurationSeconds)
+        showPlaybackMarker = false
     }
 
     // MARK: - Station Playback
@@ -418,5 +692,6 @@ final class SessionDetailViewModel {
     deinit {
         playbackTimer?.invalidate()
         stationPlaybackTimer?.invalidate()
+        displayLink?.invalidate()
     }
 }

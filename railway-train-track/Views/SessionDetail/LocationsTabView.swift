@@ -100,37 +100,35 @@ struct PlaybackControlsView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Progress slider
+            // Time-based progress slider
             Slider(
                 value: Binding(
-                    get: { Double(viewModel.selectedLocationIndex) },
-                    set: { viewModel.seekTo(index: Int($0)) }
+                    get: { viewModel.playbackElapsedTime },
+                    set: { viewModel.seekToTime($0) }
                 ),
-                in: 0 ... Double(max(1, viewModel.totalLocationPoints - 1))
+                in: 0...viewModel.playbackDurationSeconds
             )
             .disabled(viewModel.totalLocationPoints <= 1)
 
             HStack {
-                // Current time
-                if let point = viewModel.currentLocationPoint {
-                    Text(point.timestamp, style: .time)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
+                // Elapsed / Total time
+                Text(viewModel.formattedPlaybackTime)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
 
                 Spacer()
 
                 // Playback controls
                 HStack(spacing: 20) {
                     Button {
-                        viewModel.seekToBeginning()
+                        viewModel.seekToBeginningTimeBased()
                     } label: {
                         Image(systemName: "backward.end.fill")
                     }
                     .disabled(viewModel.totalLocationPoints <= 1)
 
                     Button {
-                        viewModel.togglePlayback()
+                        viewModel.toggleTimeBasedPlayback()
                     } label: {
                         Image(systemName: viewModel.isPlayingAnimation ? "pause.fill" : "play.fill")
                             .font(.title2)
@@ -138,7 +136,7 @@ struct PlaybackControlsView: View {
                     .disabled(viewModel.totalLocationPoints <= 1)
 
                     Button {
-                        viewModel.seekToEnd()
+                        viewModel.seekToEndTimeBased()
                     } label: {
                         Image(systemName: "forward.end.fill")
                     }
@@ -168,15 +166,22 @@ struct PlaybackControlsView: View {
             HStack {
                 Label("\(viewModel.totalLocationPoints) points", systemImage: "mappin.and.ellipse")
                 Spacer()
-                if let point = viewModel.currentLocationPoint {
-                    Label(point.formattedSpeed, systemImage: "speedometer")
-                }
+                Label("Duration: \(formatDuration(viewModel.playbackDurationSeconds))", systemImage: "timer")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
         }
         .padding()
         .background(.ultraThinMaterial)
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        if s >= 60 {
+            return "\(s / 60)m \(s % 60)s"
+        } else {
+            return "\(s)s"
+        }
     }
 }
 
