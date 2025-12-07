@@ -96,7 +96,9 @@ struct SessionListView: View {
                 Button("Discard", role: .destructive) {
                     trackingViewModel.discardRecoveredSession()
                 }
-                Button("Cancel", role: .cancel) { }
+                Button("Cancel", role: .cancel) {
+                    trackingViewModel.dismissRecoveryPrompt()
+                }
             } message: {
                 Text("You have an active recording session that was interrupted. Would you like to resume it?")
             }
@@ -117,6 +119,13 @@ struct SessionListView: View {
     private func sessionRow(for session: TrackingSession) -> some View {
         if session.isActive {
             Button {
+                // If this is the recoverable session, resume it properly
+                if trackingViewModel.recoverableSession?.id == session.id {
+                    trackingViewModel.resumeRecoveredSession()
+                } else if !trackingViewModel.isTracking {
+                    // Handle orphaned active session - resume tracking
+                    trackingViewModel.resumeFinishedSession(session)
+                }
                 selectedActiveSession = session
             } label: {
                 SessionRowView(session: session)

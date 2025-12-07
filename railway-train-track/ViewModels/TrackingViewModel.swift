@@ -281,6 +281,13 @@ final class TrackingViewModel {
         recoverableSession = nil
     }
 
+    func dismissRecoveryPrompt() {
+        // Clear UI state only - session stays active for next app launch
+        hasRecoverableSession = false
+        recoverableSession = nil
+        // Keep activeSessionId so it prompts again on next launch
+    }
+
     // MARK: - Resume Finished Session
 
     func resumeFinishedSession(_ session: TrackingSession) {
