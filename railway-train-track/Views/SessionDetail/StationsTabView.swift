@@ -104,7 +104,7 @@ struct StationsTabView: View {
                 Label("\(viewModel.sortedStationEvents.count) stations", systemImage: "train.side.front.car")
                 Spacer()
                 Button {
-                    viewModel.showStationSearchSheet = true
+                    viewModel.sheetContent = .stationSearch
                 } label: {
                     Image(systemName: "plus.circle.fill")
                 }
@@ -150,12 +150,6 @@ struct StationsTabView: View {
             if let station = viewModel.stationToDelete {
                 Text("Are you sure you want to remove \(station.stationName) from this journey?")
             }
-        }
-        .sheet(isPresented: $viewModel.showStationSearchSheet) {
-            StationSearchSheet(
-                viewModel: viewModel,
-                stationDataViewModel: viewModel.stationDataViewModel
-            )
         }
     }
 }

@@ -15,6 +15,26 @@ enum SessionTab: String, CaseIterable {
     case stations = "Stations"
 }
 
+enum SheetContent: Identifiable {
+    case tabBar
+    case playbackSettings
+    case stationSearch
+    case exportCSV
+    case exportJSON
+    case exportVideo
+
+    var id: String {
+        switch self {
+        case .tabBar: return "tabBar"
+        case .playbackSettings: return "playbackSettings"
+        case .stationSearch: return "stationSearch"
+        case .exportCSV: return "exportCSV"
+        case .exportJSON: return "exportJSON"
+        case .exportVideo: return "exportVideo"
+        }
+    }
+}
+
 @Observable
 final class SessionDetailViewModel {
     // Session
@@ -27,7 +47,9 @@ final class SessionDetailViewModel {
     var selectedLocationIndex: Int = 0
     var isPlayingAnimation: Bool = false
     var playbackSpeed: Double = 1.0
-    var showPlaybackSettingsSheet: Bool = false
+
+    // Sheet state
+    var sheetContent: SheetContent = .tabBar
 
     // Station playback state
     var selectedStationIndex: Int = 0
@@ -41,7 +63,6 @@ final class SessionDetailViewModel {
     // Station management state
     var stationToDelete: StationPassEvent?
     var showDeleteConfirmation: Bool = false
-    var showStationSearchSheet: Bool = false
 
     // Station data (unified ViewModel for search and railway routes)
     var stationDataViewModel = StationDataViewModel()
@@ -194,7 +215,7 @@ final class SessionDetailViewModel {
     private func advancePlayback() {
         if selectedLocationIndex < totalLocationPoints - 1 {
             selectedLocationIndex += 1
-            updateMapForCurrentLocation()
+            // Camera animation handled by mapCameraKeyframeAnimator in view
         } else {
             pausePlayback()
             selectedLocationIndex = 0

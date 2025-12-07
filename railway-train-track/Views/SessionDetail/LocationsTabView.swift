@@ -5,8 +5,8 @@
 //  Created by Qiwei Li on 12/6/25.
 //
 
-import SwiftUI
 import MapKit
+import SwiftUI
 
 struct LocationsTabView: View {
     @Bindable var viewModel: SessionDetailViewModel
@@ -24,20 +24,20 @@ struct LocationsTabView: View {
                     description: Text("No GPS points were recorded in this session.")
                 )
             } else {
-                List {
-                    ForEach(Array(viewModel.sortedLocationPoints.enumerated()), id: \.element.id) { index, point in
-                        LocationRowView(
-                            point: point,
-                            index: index,
-                            isSelected: index == viewModel.selectedLocationIndex
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            viewModel.seekTo(index: index)
+                ScrollView {
+                    LazyVStack {
+                        ForEach(Array(viewModel.sortedLocationPoints.enumerated()), id: \.element.id) { index, point in
+                            LocationRowView(
+                                point: point,
+                                index: index,
+                                isSelected: index == viewModel.selectedLocationIndex
+                            )
+                            .onTapGesture {
+                                viewModel.seekTo(index: index)
+                            }
                         }
                     }
                 }
-                .listStyle(.plain)
             }
         }
     }
@@ -106,7 +106,7 @@ struct PlaybackControlsView: View {
                     get: { Double(viewModel.selectedLocationIndex) },
                     set: { viewModel.seekTo(index: Int($0)) }
                 ),
-                in: 0...Double(max(1, viewModel.totalLocationPoints - 1))
+                in: 0 ... Double(max(1, viewModel.totalLocationPoints - 1))
             )
             .disabled(viewModel.totalLocationPoints <= 1)
 

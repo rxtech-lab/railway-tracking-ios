@@ -137,4 +137,62 @@ struct TrackingViewModelTests {
         // Assert: hasActiveSession should still be false because we didn't start tracking
         #expect(viewModel.hasActiveSession == false)
     }
+
+    // MARK: - clearSessionIfDeleted Tests
+
+    @Test func clearSessionIfDeleted_clearsStateWhenCurrentSession() async throws {
+        let viewModel = TrackingViewModel()
+        let session = TrackingSession(name: "Test")
+
+        // Setup: simulate active tracking
+        viewModel.recoverableSession = session
+        viewModel.hasRecoverableSession = true
+        viewModel.resumeRecoveredSession()
+
+        #expect(viewModel.hasActiveSession == true)
+
+        // Act
+        viewModel.clearSessionIfDeleted(session)
+
+        // Assert
+        #expect(viewModel.isTracking == false)
+        #expect(viewModel.isPaused == false)
+        #expect(viewModel.currentSession == nil)
+        #expect(viewModel.hasActiveSession == false)
+    }
+
+    @Test func clearSessionIfDeleted_doesNothingForDifferentSession() async throws {
+        let viewModel = TrackingViewModel()
+        let activeSession = TrackingSession(name: "Active")
+        let otherSession = TrackingSession(name: "Other")
+
+        // Setup: simulate active tracking
+        viewModel.recoverableSession = activeSession
+        viewModel.hasRecoverableSession = true
+        viewModel.resumeRecoveredSession()
+
+        // Act: delete a different session
+        viewModel.clearSessionIfDeleted(otherSession)
+
+        // Assert: tracking state unchanged
+        #expect(viewModel.isTracking == true)
+        #expect(viewModel.currentSession === activeSession)
+        #expect(viewModel.hasActiveSession == true)
+    }
+
+    @Test func clearSessionIfDeleted_clearsRecoverableSession() async throws {
+        let viewModel = TrackingViewModel()
+        let session = TrackingSession(name: "Recoverable")
+
+        // Setup: simulate recoverable session (not yet resumed)
+        viewModel.hasRecoverableSession = true
+        viewModel.recoverableSession = session
+
+        // Act
+        viewModel.clearSessionIfDeleted(session)
+
+        // Assert
+        #expect(viewModel.hasRecoverableSession == false)
+        #expect(viewModel.recoverableSession == nil)
+    }
 }

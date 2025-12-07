@@ -149,6 +149,24 @@ final class TrackingViewModel {
         currentSession = nil
     }
 
+    func clearSessionIfDeleted(_ session: TrackingSession) {
+        // Clear tracking state if this is the current session
+        if currentSession?.id == session.id {
+            isTracking = false
+            isPaused = false
+            currentSession = nil
+            activeSessionId = nil
+            locationManager.stopTracking()
+        }
+
+        // Clear recovery state if this is the recoverable session
+        if recoverableSession?.id == session.id {
+            hasRecoverableSession = false
+            recoverableSession = nil
+            activeSessionId = nil
+        }
+    }
+
     private func handleNewLocation(_ location: CLLocation) {
         guard isTracking, !isPaused, let session = currentSession else { return }
 

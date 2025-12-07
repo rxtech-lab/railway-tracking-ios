@@ -5,9 +5,9 @@
 //  Created by Qiwei Li on 12/6/25.
 //
 
-import SwiftUI
-import SwiftData
 import MapKit
+import SwiftData
+import SwiftUI
 
 struct SessionDetailView: View {
     @Environment(\.modelContext) private var modelContext
@@ -15,7 +15,6 @@ struct SessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: SessionDetailViewModel
     @State private var exportViewModel = ExportViewModel()
-    @State private var sheetPresented = true
 
     init(session: TrackingSession) {
         _viewModel = State(initialValue: SessionDetailViewModel(session: session))
@@ -29,41 +28,35 @@ struct SessionDetailView: View {
             )
             .ignoresSafeArea()
         }
-        .sheet(isPresented: $sheetPresented) {
-            SessionSheetContent(viewModel: viewModel, exportViewModel: exportViewModel)
-                .presentationDetents([.height(200), .medium, .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled)
-                .interactiveDismissDisabled()
+        .sheet(item: Binding(
+            get: { viewModel.sheetContent },
+            set: { viewModel.sheetContent = $0 ?? .tabBar }
+        )) { content in
+            SheetContentView(
+                content: content,
+                viewModel: viewModel,
+                exportViewModel: exportViewModel
+            )
+            .presentationDetents(content == .tabBar ? [.height(200), .medium, .large] : [.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(content == .tabBar ? .enabled : .disabled)
+            .interactiveDismissDisabled()
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: 16) {
-                    if !viewModel.session.isActive && !trackingViewModel.hasActiveSession {
-                        Button {
-                            trackingViewModel.resumeFinishedSession(viewModel.session)
-                            dismiss()
-                        } label: {
-                            Image(systemName: "play.fill")
-                        }
-                    }
-
                     Button {
-                        viewModel.showPlaybackSettingsSheet = true
+                        viewModel.sheetContent = .playbackSettings
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                     }
 
                     ExportMenuButton(
-                        session: viewModel.session,
-                        currentTab: viewModel.selectedTab,
+                        viewModel: viewModel,
                         exportViewModel: exportViewModel
                     )
                 }
             }
-        }
-        .sheet(isPresented: $viewModel.showPlaybackSettingsSheet) {
-            PlaybackSettingsSheet(viewModel: viewModel)
         }
         .navigationTitle(viewModel.session.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -74,10 +67,130 @@ struct SessionDetailView: View {
     }
 }
 
+// MARK: - Sheet Content View
+
+struct SheetContentView: View {
+    let content: SheetContent
+    @Bindable var viewModel: SessionDetailViewModel
+    @Bindable var exportViewModel: ExportViewModel
+
+    var body: some View {
+        switch content {
+        case .tabBar:
+            SessionSheetContent(viewModel: viewModel, exportViewModel: exportViewModel)
+
+        case .playbackSettings:
+            NavigationStack {
+                PlaybackSettingsContent(viewModel: viewModel)
+                    .navigationTitle("Playback Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                viewModel.sheetContent = .tabBar
+                            }
+                        }
+                    }
+            }
+
+        case .stationSearch:
+            NavigationStack {
+                StationSearchContent(
+                    viewModel: viewModel,
+                    stationDataViewModel: viewModel.stationDataViewModel
+                )
+                .navigationTitle("Add Station")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            viewModel.sheetContent = .tabBar
+                        }
+                    }
+                }
+            }
+
+        case .exportCSV:
+            NavigationStack {
+                CSVExportContent(
+                    session: viewModel.session,
+                    exportType: viewModel.selectedTab,
+                    exportViewModel: exportViewModel
+                )
+                .navigationTitle("Export CSV")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            viewModel.sheetContent = .tabBar
+                        }
+                    }
+                }
+            }
+
+        case .exportJSON:
+            NavigationStack {
+                JSONExportContent(
+                    session: viewModel.session,
+                    exportType: viewModel.selectedTab,
+                    exportViewModel: exportViewModel
+                )
+                .navigationTitle("Export JSON")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            viewModel.sheetContent = .tabBar
+                        }
+                    }
+                }
+            }
+
+        case .exportVideo:
+            NavigationStack {
+                VideoExportContent(
+                    session: viewModel.session,
+                    exportViewModel: exportViewModel
+                )
+                .navigationTitle("Export Video")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            viewModel.sheetContent = .tabBar
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Session Map View
 
 struct SessionMapView: View {
     @Bindable var viewModel: SessionDetailViewModel
+
+    // Animated marker state (separate lat/lon for SwiftUI animation)
+    @State private var markerLatitude: Double = 0
+    @State private var markerLongitude: Double = 0
+
+    private var markerCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: markerLatitude, longitude: markerLongitude)
+    }
+
+    // Computed traveled coordinates including animated position
+    private var traveledCoordinates: [CLLocationCoordinate2D] {
+        guard viewModel.selectedLocationIndex > 0 || markerLatitude != 0 else { return [] }
+        var coords = Array(viewModel.session.coordinates.prefix(viewModel.selectedLocationIndex + 1))
+        // Append animated marker position if it differs from last point
+        if let lastCoord = coords.last,
+           lastCoord.latitude != markerLatitude || lastCoord.longitude != markerLongitude
+        {
+            coords.append(markerCoordinate)
+        }
+        return coords
+    }
 
     var body: some View {
         Map(position: $viewModel.mapCameraPosition) {
@@ -87,10 +200,9 @@ struct SessionMapView: View {
                     .stroke(.blue.opacity(0.5), lineWidth: 3)
             }
 
-            // Traveled route (up to current playback position)
-            if viewModel.selectedLocationIndex > 0 {
-                let traveledCoords = Array(viewModel.session.coordinates.prefix(viewModel.selectedLocationIndex + 1))
-                MapPolyline(coordinates: traveledCoords)
+            // Traveled route (up to current playback position with animation)
+            if traveledCoordinates.count > 1 {
+                MapPolyline(coordinates: traveledCoordinates)
                     .stroke(.blue, lineWidth: 4)
             }
 
@@ -116,9 +228,9 @@ struct SessionMapView: View {
                 }
             }
 
-            // Current position marker
-            if let point = viewModel.currentLocationPoint {
-                Annotation("Current", coordinate: point.coordinate) {
+            // Current position marker (animated)
+            if viewModel.currentLocationPoint != nil {
+                Annotation("Current", coordinate: markerCoordinate) {
                     ZStack {
                         Circle()
                             .fill(.white)
@@ -146,7 +258,8 @@ struct SessionMapView: View {
 
             // End marker
             if let last = viewModel.sortedLocationPoints.last,
-               viewModel.sortedLocationPoints.count > 1 {
+               viewModel.sortedLocationPoints.count > 1
+            {
                 Annotation("End", coordinate: last.coordinate) {
                     ZStack {
                         Circle()
@@ -163,6 +276,29 @@ struct SessionMapView: View {
             MapCompass()
             MapScaleView()
             MapUserLocationButton()
+        }
+        .mapCameraKeyframeAnimator(trigger: viewModel.currentLocationPoint?.id) { initialCamera in
+            KeyframeTrack(\.centerCoordinate) {
+                if let point = viewModel.currentLocationPoint {
+                    CubicKeyframe(point.coordinate, duration: 0.1 / viewModel.playbackSpeed)
+                } else {
+                    CubicKeyframe(initialCamera.centerCoordinate, duration: 0.1)
+                }
+            }
+        }
+        .onChange(of: viewModel.currentLocationPoint?.id) { _, _ in
+            guard let point = viewModel.currentLocationPoint else { return }
+            let duration = 0.1 / viewModel.playbackSpeed
+            withAnimation(.linear(duration: duration)) {
+                markerLatitude = point.coordinate.latitude
+                markerLongitude = point.coordinate.longitude
+            }
+        }
+        .onAppear {
+            if let point = viewModel.currentLocationPoint {
+                markerLatitude = point.coordinate.latitude
+                markerLongitude = point.coordinate.longitude
+            }
         }
     }
 }

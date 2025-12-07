@@ -5,8 +5,8 @@
 //  Created by Qiwei Li on 12/6/25.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
@@ -14,14 +14,16 @@ struct SessionListView: View {
     @Query(sort: \TrackingSession.startTime, order: .reverse)
     private var sessions: [TrackingSession]
 
+    @State private var navigationPath = NavigationPath()
     @State private var showNewSessionSheet = false
     @State private var selectedActiveSession: TrackingSession?
     @State private var showRecoveryAlert = false
     @State private var showDeleteConfirmation = false
     @State private var sessionToDelete: TrackingSession?
+    @State private var sessionToEdit: TrackingSession?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if sessions.isEmpty {
                     ContentUnavailableView(
@@ -51,20 +53,34 @@ struct SessionListView: View {
                                                 Label("Delete", systemImage: "trash")
                                             }
                                         }
-                                }
-                                .onDelete { indexSet in
-                                    deleteSession(from: daySessions, at: indexSet)
+                                        .swipeActions(edge: .trailing) {
+                                            Button(role: .destructive) {
+                                                sessionToDelete = session
+                                                showDeleteConfirmation = true
+                                            } label: {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                        }
+                                        .swipeActions(edge: .leading) {
+                                            Button {
+                                                sessionToEdit = session
+                                            } label: {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
+                                            .tint(.orange)
+                                        }
                                 }
                             }
                         }
                     }
                 }
             }
+            .navigationDestination(for: TrackingSession.self) { session in
+                SessionDetailView(session: session)
+                    .toolbar(.hidden, for: .tabBar)
+            }
             .navigationTitle("Sessions")
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    EditButton()
-                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if !trackingViewModel.hasActiveSession {
                         Button {
@@ -82,6 +98,9 @@ struct SessionListView: View {
             }
             .sheet(item: $selectedActiveSession) { session in
                 ActiveSessionSheet(session: session)
+            }
+            .sheet(item: $sessionToEdit) { session in
+                SessionEditSheet(session: session)
             }
             .onAppear {
                 if trackingViewModel.hasRecoverableSession {
@@ -132,7 +151,7 @@ struct SessionListView: View {
             }
             .foregroundStyle(.primary)
         } else {
-            NavigationLink(destination: SessionDetailView(session: session)) {
+            NavigationLink(value: session) {
                 SessionRowView(session: session)
             }
         }
@@ -147,16 +166,10 @@ struct SessionListView: View {
         return grouped.sorted { $0.key > $1.key }
     }
 
-    private func deleteSession(from daySessions: [TrackingSession], at offsets: IndexSet) {
-        if let index = offsets.first {
-            sessionToDelete = daySessions[index]
-            showDeleteConfirmation = true
-        }
-    }
-
     private func confirmDelete() {
         if let session = sessionToDelete {
             withAnimation {
+                trackingViewModel.clearSessionIfDeleted(session)
                 modelContext.delete(session)
                 try? modelContext.save()
             }
