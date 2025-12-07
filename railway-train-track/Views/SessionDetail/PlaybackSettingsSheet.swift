@@ -12,8 +12,6 @@ struct PlaybackSettingsContent: View {
     @State private var durationText: String = ""
     @FocusState private var isDurationFieldFocused: Bool
 
-    private let speedOptions: [Double] = [0.5, 1.0, 2.0, 4.0, 8.0]
-
     var body: some View {
         Form {
             // Playback Duration Section
@@ -51,7 +49,7 @@ struct PlaybackSettingsContent: View {
 
                     // Stepper for fine adjustment
                     Stepper(
-                        "Adjust: \(Int(viewModel.playbackDurationSeconds))s",
+                        "Adjust: \(formatDurationHHMMSS(viewModel.playbackDurationSeconds))",
                         value: Binding(
                             get: { viewModel.playbackDurationSeconds },
                             set: {
@@ -59,49 +57,15 @@ struct PlaybackSettingsContent: View {
                                 durationText = "\(Int(viewModel.playbackDurationSeconds))"
                             }
                         ),
-                        in: 1...3600,
+                        in: 1 ... 3600,
                         step: 5
                     )
                     .font(.subheadline)
                 }
-
-                // Journey info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Original journey: \(viewModel.formattedJourneyDuration)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("Compression: \(compressionRatio)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Playback Speed") {
-                Picker("Speed", selection: $viewModel.playbackSpeed) {
-                    ForEach(speedOptions, id: \.self) { speed in
-                        Text(formatSpeed(speed))
-                            .tag(speed)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("Fine-tune")
-                            .font(.subheadline)
-                        Spacer()
-                        Text(formatSpeed(viewModel.playbackSpeed))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Slider(value: $viewModel.playbackSpeed, in: 0.25...8.0, step: 0.25)
-                }
-                .padding(.vertical, 8)
             }
 
             Section {
-                Text("Set the total playback duration to compress your journey. Speed controls how fast the animation plays within that duration.")
+                Text("Set the total playback duration to compress your journey. The position updates once per second during playback.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -133,12 +97,12 @@ struct PlaybackSettingsContent: View {
         }
     }
 
-    private func formatSpeed(_ speed: Double) -> String {
-        if speed == floor(speed) {
-            return String(format: "%.0fx", speed)
-        } else {
-            return String(format: "%.1fx", speed)
-        }
+    private func formatDurationHHMMSS(_ seconds: Double) -> String {
+        let totalSeconds = Int(seconds)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, secs)
     }
 }
 

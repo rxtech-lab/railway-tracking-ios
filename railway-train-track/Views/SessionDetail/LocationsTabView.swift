@@ -143,23 +143,6 @@ struct PlaybackControlsView: View {
                     .disabled(viewModel.totalLocationPoints <= 1)
                 }
 
-                Spacer()
-
-                // Speed selector
-                Menu {
-                    ForEach([0.5, 1.0, 2.0, 4.0, 8.0], id: \.self) { speed in
-                        Button("\(speed, specifier: "%.1f")x") {
-                            viewModel.playbackSpeed = speed
-                        }
-                    }
-                } label: {
-                    Text("\(viewModel.playbackSpeed, specifier: "%.1f")x")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(.systemGray5))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                }
             }
 
             // Session info

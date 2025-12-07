@@ -37,6 +37,8 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
     /// Whether to show the current position marker
     let showCurrentPositionMarker: Bool
 
+    let showRoutePolyline: Bool
+
     /// Additional map content (annotations, markers, etc.)
     @MapContentBuilder let additionalContent: () -> Content
 
@@ -80,6 +82,7 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         railwayRoutes: [[CLLocationCoordinate2D]] = [],
         markerStyle: MarkerStyle = .currentPosition,
         showCurrentPositionMarker: Bool = true,
+        showRoutePolyline: Bool = true,
         @MapContentBuilder additionalContent: @escaping () -> Content
     ) {
         self._cameraPosition = cameraPosition
@@ -92,12 +95,13 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         self.markerStyle = markerStyle
         self.showCurrentPositionMarker = showCurrentPositionMarker
         self.additionalContent = additionalContent
+        self.showRoutePolyline = showRoutePolyline
     }
 
     var body: some View {
         Map(position: $cameraPosition) {
             // Full route polyline (faded)
-            if routeCoordinates.count > 1 {
+            if showRoutePolyline && routeCoordinates.count > 1 {
                 MapPolyline(coordinates: routeCoordinates)
                     .stroke(.blue.opacity(0.5), lineWidth: 3)
             }
@@ -197,7 +201,8 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         markers: [TrackingPoint] = [],
         railwayRoutes: [[CLLocationCoordinate2D]] = [],
         markerStyle: MarkerStyle = .currentPosition,
-        showCurrentPositionMarker: Bool = true
+        showCurrentPositionMarker: Bool = true,
+        showRoutePolyline: Bool = true
     ) {
         self._cameraPosition = cameraPosition
         self.currentCoordinate = currentCoordinate
@@ -208,6 +213,7 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         self.railwayRoutes = railwayRoutes
         self.markerStyle = markerStyle
         self.showCurrentPositionMarker = showCurrentPositionMarker
+        self.showRoutePolyline = showRoutePolyline
         self.additionalContent = { EmptyMapContent() }
     }
 }

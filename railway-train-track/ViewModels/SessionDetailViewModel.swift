@@ -8,7 +8,6 @@
 import CoreLocation
 import Foundation
 import MapKit
-import QuartzCore
 import SwiftData
 import SwiftUI
 
@@ -48,13 +47,13 @@ final class SessionDetailViewModel {
     // Location playback state (legacy index-based)
     var selectedLocationIndex: Int = 0
     var isPlayingAnimation: Bool = false
-    var playbackSpeed: Double = 1.0
     var showPlaybackMarker: Bool = false
 
     // Time-based playback state
     var playbackDurationSeconds: Double = 30.0  // User-editable total playback duration
     var playbackElapsedTime: Double = 0.0       // Current elapsed time in playback
     var interpolatedCoordinate: CLLocationCoordinate2D?  // Smoothly interpolated position
+    var positionUpdateFrequency: TimeInterval = 1.0  // How often to update position during playback
 
     // Sheet state
     var sheetContent: SheetContent = .tabBar
@@ -84,10 +83,7 @@ final class SessionDetailViewModel {
     private var modelContext: ModelContext?
     private var playbackTimer: Timer?
     private var stationPlaybackTimer: Timer?
-
-    // Display link for smooth time-based playback
-    private var displayLink: CADisplayLink?
-    private var lastFrameTime: CFTimeInterval = 0
+    private var timeBasedPlaybackTimer: Timer?
 
     init(
         session: TrackingSession,
@@ -185,10 +181,10 @@ final class SessionDetailViewModel {
         }
     }
 
-    /// Animation duration for smooth transitions
+    /// Animation duration for smooth transitions between position updates
     var playbackAnimationDuration: Double {
-        // Smooth transitions - roughly 1/60s per frame
-        0.016
+        // Use a portion of the update frequency for smooth animation
+        positionUpdateFrequency * 0.8
     }
 
     /// Traveled coordinates up to the current interpolated position
@@ -301,7 +297,7 @@ final class SessionDetailViewModel {
         isPlayingAnimation = true
         showPlaybackMarker = true
 
-        let interval = (1.0 / playbackSpeed) * 0.3 // ~3 points per second at 1x, allows smooth animation overlap
+        let interval = 0.3 // ~3 points per second
         playbackTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.advancePlayback()
         }
@@ -413,8 +409,9 @@ final class SessionDetailViewModel {
         return CLLocationCoordinate2D(latitude: interpolatedLat, longitude: interpolatedLon)
     }
 
-    /// Start time-based playback with smooth 60fps animation
-    func startTimeBasedPlayback() {
+    /// Start time-based playback with configurable position update frequency
+    /// - Parameter currentPositionUpdateFrequency: How often to update the position (in seconds). Default is 1.0 second.
+    func startTimeBasedPlayback(currentPositionUpdateFrequency: TimeInterval = 1.0) {
         guard !sortedLocationPoints.isEmpty else { return }
 
         // Reset if at end
@@ -424,34 +421,38 @@ final class SessionDetailViewModel {
 
         isPlayingAnimation = true
         showPlaybackMarker = true
-        lastFrameTime = CACurrentMediaTime()
+        positionUpdateFrequency = currentPositionUpdateFrequency
 
-        // Create display link for smooth 60fps updates
-        displayLink = CADisplayLink(target: self, selector: #selector(updatePlaybackFrame))
-        displayLink?.add(to: .main, forMode: .common)
+        // Use Timer with specified frequency
+        timeBasedPlaybackTimer = Timer.scheduledTimer(
+            withTimeInterval: currentPositionUpdateFrequency,
+            repeats: true
+        ) { [weak self] _ in
+            self?.updatePlaybackFrame()
+        }
+
+        // Initial position update
+        interpolatedCoordinate = calculateInterpolatedPosition()
     }
 
     /// Pause time-based playback
     func pauseTimeBasedPlayback() {
         isPlayingAnimation = false
-        displayLink?.invalidate()
-        displayLink = nil
+        timeBasedPlaybackTimer?.invalidate()
+        timeBasedPlaybackTimer = nil
     }
 
-    /// Update playback frame (called by CADisplayLink at ~60fps)
-    @objc private func updatePlaybackFrame() {
+    /// Update playback frame (called by Timer at the configured frequency)
+    /// Internal for testing purposes
+    func updatePlaybackFrame() {
         guard isPlayingAnimation else {
-            displayLink?.invalidate()
-            displayLink = nil
+            timeBasedPlaybackTimer?.invalidate()
+            timeBasedPlaybackTimer = nil
             return
         }
 
-        let currentTime = CACurrentMediaTime()
-        let deltaTime = currentTime - lastFrameTime
-        lastFrameTime = currentTime
-
-        // Advance elapsed time based on playback speed
-        playbackElapsedTime += deltaTime * playbackSpeed
+        // Advance elapsed time by the update frequency
+        playbackElapsedTime += positionUpdateFrequency
 
         // Update interpolated position
         interpolatedCoordinate = calculateInterpolatedPosition()
@@ -509,8 +510,8 @@ final class SessionDetailViewModel {
         guard !sortedStationEvents.isEmpty else { return }
         isPlayingStationAnimation = true
 
-        // 2 seconds per station at 1x speed
-        let interval = 2.0 / playbackSpeed
+        // 2 seconds per station
+        let interval = 2.0
         stationPlaybackTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.advanceStationPlayback()
         }
@@ -692,6 +693,6 @@ final class SessionDetailViewModel {
     deinit {
         playbackTimer?.invalidate()
         stationPlaybackTimer?.invalidate()
-        displayLink?.invalidate()
+        timeBasedPlaybackTimer?.invalidate()
     }
 }
