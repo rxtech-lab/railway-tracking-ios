@@ -17,6 +17,8 @@ struct railway_train_trackApp: App {
             TrainStation.self,
             StationPassEvent.self,
             RailwayRoute.self,
+            SessionNote.self,
+            SessionPhoto.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,

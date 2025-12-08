@@ -8,6 +8,7 @@
 @testable import railway_train_track
 import CoreLocation
 import Testing
+import UIKit
 
 @MainActor
 struct SessionDetailViewModelTests {
@@ -600,5 +601,362 @@ struct SessionDetailViewModelTests {
         }
 
         return session
+    }
+
+    // MARK: - Note Creation Tests
+
+    @Test func addNoteAtCurrentPlaybackPosition_createsNoteEditorContext() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 50, intervalSeconds: 1.0)
+        let viewModel = SessionDetailViewModel(session: session)
+        viewModel.playbackDurationSeconds = 50.0
+        viewModel.seekToProgress(0.5) // Seek to middle
+
+        // Act
+        viewModel.addNoteAtCurrentPlaybackPosition()
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            // Coordinate should match interpolated position
+            let interpolated = viewModel.interpolatedCoordinate
+            #expect(context.coordinate.latitude == interpolated!.latitude)
+            #expect(context.coordinate.longitude == interpolated!.longitude)
+            #expect(context.existingNote == nil)
+            #expect(context.linkedStationEvent == nil)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    @Test func addNoteAtCurrentPlaybackPosition_fallsToFirstPoint_whenNoInterpolation() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10, intervalSeconds: 1.0)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Act: Without starting playback (no interpolated position)
+        viewModel.addNoteAtCurrentPlaybackPosition()
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            // Should fall back to first location point
+            let firstPoint = session.sortedLocationPoints.first!
+            #expect(context.coordinate.latitude == firstPoint.latitude)
+            #expect(context.coordinate.longitude == firstPoint.longitude)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    @Test func addNoteAtCoordinate_createsContextWithSpecificCoordinate() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+        let testCoordinate = CLLocationCoordinate2D(latitude: 40.0, longitude: 140.0)
+
+        // Act
+        viewModel.addNoteAtCoordinate(testCoordinate)
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            #expect(context.coordinate.latitude == 40.0)
+            #expect(context.coordinate.longitude == 140.0)
+            #expect(context.linkedStationEvent == nil)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    @Test func addNoteForStation_linksStationEvent() async throws {
+        // Arrange
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+        let stationEvent = session.stationPassEvents.first!
+
+        // Act
+        viewModel.addNoteForStation(stationEvent)
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            #expect(context.linkedStationEvent?.id == stationEvent.id)
+            #expect(context.coordinate.latitude == stationEvent.station!.latitude)
+            #expect(context.coordinate.longitude == stationEvent.station!.longitude)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    // MARK: - Map Interaction Tests
+
+    @Test func handleMapLongPress_createsNoteAtCoordinate() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+        let pressCoordinate = CLLocationCoordinate2D(latitude: 36.0, longitude: 140.0)
+
+        // Act
+        viewModel.handleMapLongPress(pressCoordinate)
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            #expect(context.coordinate.latitude == 36.0)
+            #expect(context.coordinate.longitude == 140.0)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    @Test func handleMarkerTap_onNoteMarker_showsNoteDetail() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Create a note manually
+        let note = SessionNote(
+            timestamp: Date(),
+            latitude: 35.5,
+            longitude: 139.5,
+            plainText: "Test note"
+        )
+        session.notes.append(note)
+
+        // Create a marker from the note
+        let noteMarker = TrackingPoint.from(note: note)
+
+        // Act
+        viewModel.handleMarkerTap(noteMarker)
+
+        // Assert
+        if case .noteDetail(let detailNote) = viewModel.sheetContent {
+            #expect(detailNote.id == note.id)
+        } else {
+            Issue.record("Expected noteDetail sheet content")
+        }
+    }
+
+    @Test func handleMarkerTap_onStationMarker_createsNoteForStation() async throws {
+        // Arrange
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+        let stationEvent = session.stationPassEvents.first!
+
+        // Create a station marker
+        let stationMarker = TrackingPoint.from(
+            station: stationEvent.station!,
+            timestamp: stationEvent.timestamp,
+            eventId: stationEvent.id
+        )
+
+        // Act
+        viewModel.handleMarkerTap(stationMarker)
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            #expect(context.linkedStationEvent?.id == stationEvent.id)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    // MARK: - Note Detail Tests
+
+    @Test func viewNoteDetail_opensDetailSheet() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+        let note = SessionNote(
+            timestamp: Date(),
+            latitude: 35.5,
+            longitude: 139.5,
+            plainText: "Test note"
+        )
+        session.notes.append(note)
+
+        // Act
+        viewModel.viewNoteDetail(note)
+
+        // Assert
+        if case .noteDetail(let detailNote) = viewModel.sheetContent {
+            #expect(detailNote.id == note.id)
+        } else {
+            Issue.record("Expected noteDetail sheet content")
+        }
+    }
+
+    @Test func editNote_opensEditorWithExistingNote() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+        let note = SessionNote(
+            timestamp: Date(),
+            latitude: 35.5,
+            longitude: 139.5,
+            plainText: "Test note"
+        )
+        session.notes.append(note)
+
+        // Act
+        viewModel.editNote(note)
+
+        // Assert
+        if case .noteEditor(let context) = viewModel.sheetContent {
+            #expect(context.existingNote?.id == note.id)
+            #expect(context.isEditing == true)
+        } else {
+            Issue.record("Expected noteEditor sheet content")
+        }
+    }
+
+    // MARK: - Static Markers with Notes Tests
+
+    @Test func staticMarkers_includesNotes() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Add some notes
+        for i in 0..<3 {
+            let note = SessionNote(
+                timestamp: Date(),
+                latitude: 35.0 + Double(i) * 0.01,
+                longitude: 139.0 + Double(i) * 0.01,
+                plainText: "Note \(i + 1)"
+            )
+            session.notes.append(note)
+        }
+
+        // Act
+        let markers = viewModel.staticMarkers
+
+        // Assert
+        let noteMarkers = markers.filter { $0.type == .note }
+        #expect(noteMarkers.count == 3)
+    }
+
+    @Test func sortedNotes_returnsNotesInChronologicalOrder() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Add notes with different timestamps
+        let now = Date()
+        let note1 = SessionNote(timestamp: now.addingTimeInterval(100), latitude: 35.0, longitude: 139.0, plainText: "Note 1")
+        let note2 = SessionNote(timestamp: now.addingTimeInterval(50), latitude: 35.0, longitude: 139.0, plainText: "Note 2")
+        let note3 = SessionNote(timestamp: now.addingTimeInterval(200), latitude: 35.0, longitude: 139.0, plainText: "Note 3")
+        session.notes.append(contentsOf: [note1, note2, note3])
+
+        // Act
+        let sorted = viewModel.sortedNotes
+
+        // Assert
+        #expect(sorted[0].plainText == "Note 2") // earliest
+        #expect(sorted[1].plainText == "Note 1")
+        #expect(sorted[2].plainText == "Note 3") // latest
+    }
+}
+
+// MARK: - NoteEditorViewModel Tests
+
+@MainActor
+struct NoteEditorViewModelTests {
+    @Test func canSave_falseWhenEmpty() async throws {
+        // Arrange
+        let viewModel = NoteEditorViewModel()
+
+        // Assert
+        #expect(viewModel.canSave == false)
+    }
+
+    @Test func canSave_trueWithText() async throws {
+        // Arrange
+        let viewModel = NoteEditorViewModel()
+        viewModel.plainText = "Some note text"
+
+        // Assert
+        #expect(viewModel.canSave == true)
+    }
+
+    @Test func canSave_falseWithOnlyWhitespace() async throws {
+        // Arrange
+        let viewModel = NoteEditorViewModel()
+        viewModel.plainText = "   \n  "
+
+        // Assert
+        #expect(viewModel.canSave == false)
+    }
+
+    @Test func canSave_trueWithPhotosOnly() async throws {
+        // Arrange
+        let viewModel = NoteEditorViewModel()
+
+        // Create a small test image
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10))
+        let testImage = renderer.image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        }
+        let testData = testImage.jpegData(compressionQuality: 0.5)!
+
+        viewModel.photos.append(NoteEditorViewModel.PhotoItem(image: testImage, data: testData))
+
+        // Assert
+        #expect(viewModel.canSave == true)
+    }
+
+    @Test func removePhoto_removesCorrectPhoto() async throws {
+        // Arrange
+        let viewModel = NoteEditorViewModel()
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10))
+        let testImage = renderer.image { _ in }
+        let testData = testImage.jpegData(compressionQuality: 0.5)!
+
+        let photo1 = NoteEditorViewModel.PhotoItem(image: testImage, data: testData)
+        let photo2 = NoteEditorViewModel.PhotoItem(image: testImage, data: testData)
+        viewModel.photos = [photo1, photo2]
+
+        // Act
+        viewModel.removePhoto(photo1)
+
+        // Assert
+        #expect(viewModel.photos.count == 1)
+        #expect(viewModel.photos.first?.id == photo2.id)
+    }
+
+    @Test func removePhoto_atIndexSet_removesCorrectPhotos() async throws {
+        // Arrange
+        let viewModel = NoteEditorViewModel()
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10))
+        let testImage = renderer.image { _ in }
+        let testData = testImage.jpegData(compressionQuality: 0.5)!
+
+        let photo1 = NoteEditorViewModel.PhotoItem(image: testImage, data: testData)
+        let photo2 = NoteEditorViewModel.PhotoItem(image: testImage, data: testData)
+        let photo3 = NoteEditorViewModel.PhotoItem(image: testImage, data: testData)
+        viewModel.photos = [photo1, photo2, photo3]
+
+        // Act
+        viewModel.removePhoto(at: IndexSet(integer: 1))
+
+        // Assert
+        #expect(viewModel.photos.count == 2)
+        #expect(viewModel.photos[0].id == photo1.id)
+        #expect(viewModel.photos[1].id == photo3.id)
+    }
+
+    @Test func init_withExistingNote_loadsText() async throws {
+        // Arrange
+        let note = SessionNote(
+            timestamp: Date(),
+            latitude: 35.0,
+            longitude: 139.0,
+            plainText: "Existing note text"
+        )
+
+        // Act
+        let viewModel = NoteEditorViewModel(existingNote: note)
+
+        // Assert
+        #expect(viewModel.plainText == "Existing note text")
     }
 }

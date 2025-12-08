@@ -34,6 +34,17 @@ enum RouteSourceMode: String, Codable, CaseIterable {
 enum SessionTab: String, CaseIterable {
     case locations = "Locations"
     case stations = "Stations"
+    case notes = "Notes"
+}
+
+struct NoteEditorContext: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let linkedStationEvent: StationPassEvent?
+    let linkedStation: TrainStation?
+    let existingNote: SessionNote?
+
+    var isEditing: Bool { existingNote != nil }
 }
 
 enum SheetContent: Identifiable {
@@ -43,6 +54,8 @@ enum SheetContent: Identifiable {
     case exportCSV
     case exportJSON
     case exportVideo
+    case noteEditor(NoteEditorContext)
+    case noteDetail(SessionNote)
 
     var id: String {
         switch self {
@@ -52,7 +65,14 @@ enum SheetContent: Identifiable {
         case .exportCSV: return "exportCSV"
         case .exportJSON: return "exportJSON"
         case .exportVideo: return "exportVideo"
+        case .noteEditor(let context): return "noteEditor-\(context.id)"
+        case .noteDetail(let note): return "noteDetail-\(note.id)"
         }
+    }
+
+    var isTabBar: Bool {
+        if case .tabBar = self { return true }
+        return false
     }
 }
 
@@ -127,6 +147,9 @@ final class SessionDetailViewModel {
     // Station playback state
     var selectedStationIndex: Int = 0
     var isPlayingStationAnimation: Bool = false
+
+    // Selected station marker for visual feedback
+    var selectedStationMarkerId: UUID?
 
     // Analysis state
     var isAnalyzingStations: Bool = false
@@ -367,7 +390,7 @@ final class SessionDetailViewModel {
         return startsNearStation && endsNearStation
     }
 
-    /// Static markers for the map (start, end, stations)
+    /// Static markers for the map (start, end, stations, notes)
     var staticMarkers: [TrackingPoint] {
         var markers: [TrackingPoint] = []
 
@@ -385,12 +408,24 @@ final class SessionDetailViewModel {
         if showStationMarkers {
             for event in sortedStationEvents {
                 if let station = event.station {
-                    markers.append(.from(station: station, timestamp: event.timestamp, eventId: event.id))
+                    var marker = TrackingPoint.from(station: station, timestamp: event.timestamp, eventId: event.id)
+                    marker.isSelected = (event.id == selectedStationMarkerId)
+                    markers.append(marker)
                 }
             }
         }
 
+        // Note markers
+        for note in sortedNotes {
+            markers.append(.from(note: note))
+        }
+
         return markers
+    }
+
+    /// Sorted notes for the session
+    var sortedNotes: [SessionNote] {
+        session.sortedNotes
     }
 
     // MARK: - Map Region
@@ -917,6 +952,101 @@ final class SessionDetailViewModel {
 
     func calculateSearchRegion() -> MKCoordinateRegion {
         calculateRegion(for: session.coordinates)
+    }
+
+    // MARK: - Note Management
+
+    func addNoteAtCurrentPlaybackPosition() {
+        guard let coord = interpolatedCoordinate ?? sortedLocationPoints.first?.coordinate else { return }
+        let context = NoteEditorContext(
+            coordinate: coord,
+            linkedStationEvent: nil,
+            linkedStation: nil,
+            existingNote: nil
+        )
+        sheetContent = .noteEditor(context)
+    }
+
+    func addNoteAtCoordinate(_ coordinate: CLLocationCoordinate2D) {
+        let context = NoteEditorContext(
+            coordinate: coordinate,
+            linkedStationEvent: nil,
+            linkedStation: nil,
+            existingNote: nil
+        )
+        sheetContent = .noteEditor(context)
+    }
+
+    func addNoteForStation(_ event: StationPassEvent) {
+        guard let station = event.station else { return }
+
+        // Set selected marker for visual feedback
+        selectedStationMarkerId = event.id
+
+        // Check if note already exists for this station
+        if let existingNote = sortedNotes.first(where: { $0.linkedStationEventId == event.id }) {
+            sheetContent = .noteDetail(existingNote)
+        } else {
+            let context = NoteEditorContext(
+                coordinate: station.coordinate,
+                linkedStationEvent: event,
+                linkedStation: station,
+                existingNote: nil
+            )
+            sheetContent = .noteEditor(context)
+        }
+    }
+
+    func editNote(_ note: SessionNote) {
+        let context = NoteEditorContext(
+            coordinate: note.coordinate,
+            linkedStationEvent: nil,
+            linkedStation: note.linkedStation,
+            existingNote: note
+        )
+        sheetContent = .noteEditor(context)
+    }
+
+    func clearStationSelection() {
+        selectedStationMarkerId = nil
+    }
+
+    func viewNoteDetail(_ note: SessionNote) {
+        sheetContent = .noteDetail(note)
+    }
+
+    func handleMarkerTap(_ marker: TrackingPoint) {
+        switch marker.type {
+        case .trainStation:
+            // Find the station event and show note editor
+            if let event = sortedStationEvents.first(where: { $0.id == marker.id }) {
+                addNoteForStation(event)
+            }
+        case .note:
+            // Show existing note detail
+            if let note = sortedNotes.first(where: { $0.id == marker.id }) {
+                sheetContent = .noteDetail(note)
+            }
+        default:
+            break
+        }
+    }
+
+    func handleMapLongPress(_ coordinate: CLLocationCoordinate2D) {
+        addNoteAtCoordinate(coordinate)
+    }
+
+    func deleteNote(_ note: SessionNote) {
+        session.notes.removeAll { $0.id == note.id }
+        modelContext?.delete(note)
+        try? modelContext?.save()
+    }
+
+    func deleteNotes(at indexSet: IndexSet) {
+        let notesToDelete = indexSet.map { sortedNotes[$0] }
+        for note in notesToDelete {
+            deleteNote(note)
+        }
     }
 
     // MARK: - Cleanup

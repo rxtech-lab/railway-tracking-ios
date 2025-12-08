@@ -49,6 +49,9 @@ final class TrackingSession {
     @Relationship(deleteRule: .cascade, inverse: \StationPassEvent.session)
     var stationPassEvents: [StationPassEvent] = []
 
+    @Relationship(deleteRule: .cascade, inverse: \SessionNote.session)
+    var notes: [SessionNote] = []
+
     init(
         name: String = "",
         startTime: Date = Date(),
@@ -88,5 +91,9 @@ final class TrackingSession {
             return String(format: "%.2f km", distance / 1000)
         }
         return String(format: "%.0f m", distance)
+    }
+
+    var sortedNotes: [SessionNote] {
+        notes.sorted { $0.timestamp < $1.timestamp }
     }
 }

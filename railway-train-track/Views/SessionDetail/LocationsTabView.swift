@@ -37,6 +37,7 @@ struct LocationsTabView: View {
                             }
                         }
                     }
+                    .padding()
                 }
             }
         }
