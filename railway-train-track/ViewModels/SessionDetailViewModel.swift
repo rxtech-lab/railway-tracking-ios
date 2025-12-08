@@ -205,12 +205,6 @@ final class SessionDetailViewModel {
     /// Calculate traveled coordinates up to the current interpolated position
     private func calculateTraveledCoordinates() -> [CLLocationCoordinate2D] {
         let points = sortedLocationPoints
-        guard points.count >= 2,
-              let firstTimestamp = points.first?.timestamp
-        else {
-            return []
-        }
-
         let targetTimestamp = calculateTargetTimestamp()
 
         // Collect all points up to the target time
@@ -453,20 +447,19 @@ final class SessionDetailViewModel {
 
         // Update position and traveled path every frame
         interpolatedCoordinate = calculateInterpolatedPosition()
-        traveledCoordinates = calculateTraveledCoordinates()
+        let traveledCoordinates = calculateTraveledCoordinates()
 
-        // Debug: print every second
-        if Int(playbackElapsedTime) != Int(playbackElapsedTime - deltaTime) {
-            print("DEBUG: elapsed=\(String(format: "%.1f", playbackElapsedTime))s, progress=\(String(format: "%.2f", currentPlaybackProgress)), coords=\(traveledCoordinates.count)/\(sortedLocationPoints.count), journeyDur=\(String(format: "%.1f", journeyDuration))s")
-        }
-
-        // Update camera with smooth animation
-        if let coord = interpolatedCoordinate {
-            withAnimation(.linear(duration: 0.016)) {
-                mapCameraPosition = .camera(MapCamera(
-                    centerCoordinate: coord,
-                    distance: playbackCameraDistance
-                ))
+        // Debug: print every 0.1 seconds
+        if Int(playbackElapsedTime * 10) != Int((playbackElapsedTime - deltaTime) * 10) {
+            // update camera
+            withAnimation(.linear(duration: 0.1)) {
+                self.traveledCoordinates = traveledCoordinates
+                if let coord = interpolatedCoordinate {
+                    mapCameraPosition = .camera(MapCamera(
+                        centerCoordinate: coord,
+                        distance: playbackCameraDistance
+                    ))
+                }
             }
         }
     }

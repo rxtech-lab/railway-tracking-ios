@@ -49,9 +49,9 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
     @MapContentBuilder let additionalContent: () -> Content
 
     enum MarkerStyle {
-        case currentPosition  // Red dot with white border (playback)
-        case liveTracking     // Blue dot with white border (active session)
-        case none             // No marker
+        case currentPosition // Red dot with white border (playback)
+        case liveTracking // Blue dot with white border (active session)
+        case none // No marker
 
         var fillColor: Color {
             switch self {
@@ -101,7 +101,6 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
     }
 
     var body: some View {
-        let _ = print("DEBUG VIEW: traveledCoordinates.count = \(traveledCoordinates.count)")
         Map(position: $cameraPosition) {
             // Full route polyline (faded)
             if showRoutePolyline && routeCoordinates.count > 1 {
