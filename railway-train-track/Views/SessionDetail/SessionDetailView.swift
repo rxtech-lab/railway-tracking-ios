@@ -28,11 +28,16 @@ struct SessionDetailView: View {
                 currentCoordinate: viewModel.interpolatedCoordinate,
                 animationDuration: viewModel.playbackAnimationDuration,
                 routeCoordinates: viewModel.session.coordinates,
-                traveledCoordinates: viewModel.traveledCoordinatesForPlayback,
+                traveledCoordinates: viewModel.traveledCoordinates,
                 markers: viewModel.staticMarkers,
                 railwayRoutes: viewModel.stationDataViewModel.railwayRoutes,
                 markerStyle: .currentPosition,
-                showCurrentPositionMarker: viewModel.showPlaybackMarker
+                showCurrentPositionMarker: viewModel.showPlaybackMarker,
+                showRoutePolyline: false,
+                cameraDistance: viewModel.playbackCameraDistance,
+                onCameraDistanceChanged: { newDistance in
+                    viewModel.playbackCameraDistance = newDistance
+                }
             )
             .ignoresSafeArea()
         }
