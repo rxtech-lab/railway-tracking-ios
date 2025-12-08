@@ -75,7 +75,7 @@ final class TrainStationService {
 
         let overpassResponse = try JSONDecoder().decode(OverpassResponse.self, from: data)
 
-        return overpassResponse.elements.compactMap { element -> TrainStation? in
+        let stations = overpassResponse.elements.compactMap { element -> TrainStation? in
             guard let lat = element.latitude,
                   let lon = element.longitude,
                   let name = element.tags?["name"] else {
@@ -91,6 +91,29 @@ final class TrainStationService {
                 operatorName: element.tags?["operator"]
             )
         }
+
+        // Deduplicate stations by name (large stations have multiple OSM nodes)
+        // Keep one station per unique name
+        var uniqueStations: [String: TrainStation] = [:]
+        for station in stations {
+            if uniqueStations[station.name] == nil {
+                uniqueStations[station.name] = station
+            }
+        }
+
+        return Array(uniqueStations.values)
+    }
+
+    /// Deduplicates stations by name, keeping only one station per unique name.
+    /// This is useful because large stations have multiple OSM nodes (platforms, entrances).
+    static func deduplicateByName(_ stations: [TrainStation]) -> [TrainStation] {
+        var uniqueStations: [String: TrainStation] = [:]
+        for station in stations {
+            if uniqueStations[station.name] == nil {
+                uniqueStations[station.name] = station
+            }
+        }
+        return Array(uniqueStations.values)
     }
 
     private func calculateBoundingBox(

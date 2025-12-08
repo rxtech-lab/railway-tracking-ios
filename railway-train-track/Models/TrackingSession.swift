@@ -30,6 +30,19 @@ final class TrackingSession {
     var playbackDuration: Double = 30.0 // seconds for playback animation
     var playbackCameraDistance: Double = 2000.0 // meters for camera zoom level
 
+    // Playback display options
+    var showRailroad: Bool = true
+    var showStationMarkers: Bool = true
+    var showGPSLocationMarker: Bool = true
+
+    // Route source (stored as raw value for SwiftData compatibility)
+    var routeSourceModeRawValue: String = "GPS"
+
+    var routeSourceMode: RouteSourceMode {
+        get { RouteSourceMode(rawValue: routeSourceModeRawValue) ?? .gps }
+        set { routeSourceModeRawValue = newValue.rawValue }
+    }
+
     @Relationship(deleteRule: .cascade, inverse: \LocationPoint.session)
     var locationPoints: [LocationPoint] = []
 

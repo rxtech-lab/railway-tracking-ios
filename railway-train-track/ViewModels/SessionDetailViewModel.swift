@@ -12,6 +12,25 @@ import QuartzCore
 import SwiftData
 import SwiftUI
 
+/// Defines the source of route data for playback visualization
+enum RouteSourceMode: String, Codable, CaseIterable {
+    case gps = "GPS"
+    case railway = "Railway"
+
+    var displayName: String {
+        rawValue
+    }
+
+    var description: String {
+        switch self {
+        case .gps:
+            return "Follow actual GPS location path"
+        case .railway:
+            return "Follow railway line between stations"
+        }
+    }
+}
+
 enum SessionTab: String, CaseIterable {
     case locations = "Locations"
     case stations = "Stations"
@@ -59,6 +78,42 @@ final class SessionDetailViewModel {
     var playbackCameraDistance: Double {
         get { session.playbackCameraDistance }
         set { session.playbackCameraDistance = newValue }
+    }
+
+    // MARK: - Display Options (proxied from session for persistence)
+
+    var showRailroad: Bool {
+        get { session.showRailroad }
+        set { session.showRailroad = newValue }
+    }
+
+    var showStationMarkers: Bool {
+        get { session.showStationMarkers }
+        set { session.showStationMarkers = newValue }
+    }
+
+    var showGPSLocationMarker: Bool {
+        get { session.showGPSLocationMarker }
+        set { session.showGPSLocationMarker = newValue }
+    }
+
+    var routeSourceMode: RouteSourceMode {
+        get { session.routeSourceMode }
+        set { session.routeSourceMode = newValue }
+    }
+
+    // MARK: - Railway Mode State
+
+    /// The index of the last station passed (for railway mode)
+    var currentStationPassIndex: Int = -1
+
+    /// The coordinate of the current station in railway mode
+    var currentStationCoordinate: CLLocationCoordinate2D? {
+        guard currentStationPassIndex >= 0,
+              currentStationPassIndex < sortedStationEvents.count,
+              let station = sortedStationEvents[currentStationPassIndex].station
+        else { return nil }
+        return station.coordinate
     }
 
     var playbackElapsedTime: Double = 0.0 // Current elapsed time in playback
@@ -202,8 +257,18 @@ final class SessionDetailViewModel {
         positionUpdateFrequency * 0.8
     }
 
-    /// Calculate traveled coordinates up to the current interpolated position
+    /// Calculate traveled coordinates based on current route source mode
     private func calculateTraveledCoordinates() -> [CLLocationCoordinate2D] {
+        switch routeSourceMode {
+        case .gps:
+            return calculateGPSTraveledCoordinates()
+        case .railway:
+            return calculateRailwayTraveledCoordinates()
+        }
+    }
+
+    /// GPS-based traveled coordinates (original implementation)
+    private func calculateGPSTraveledCoordinates() -> [CLLocationCoordinate2D] {
         let points = sortedLocationPoints
         let targetTimestamp = calculateTargetTimestamp()
 
@@ -231,11 +296,82 @@ final class SessionDetailViewModel {
         return coords
     }
 
+    /// Railway-based traveled coordinates
+    private func calculateRailwayTraveledCoordinates() -> [CLLocationCoordinate2D] {
+        // Update current station pass index based on playback progress
+        updateCurrentStationPassIndex()
+
+        guard currentStationPassIndex >= 0 else { return [] }
+
+        // Collect railway segments up to (and including) the current station
+        var coords: [CLLocationCoordinate2D] = []
+
+        // Get stations passed so far
+        let passedStations = Array(sortedStationEvents.prefix(currentStationPassIndex + 1))
+        let passedStationCoords = passedStations.compactMap { $0.station?.coordinate }
+
+        // For each railway route segment, check if it connects passed stations
+        for route in stationDataViewModel.railwayRoutes {
+            if shouldIncludeRailwaySegment(route, forPassedStations: passedStationCoords) {
+                coords.append(contentsOf: route)
+            }
+        }
+
+        return coords
+    }
+
+    /// Update the current station pass index based on playback timestamp
+    private func updateCurrentStationPassIndex() {
+        let targetTimestamp = calculateTargetTimestamp()
+        let events = sortedStationEvents
+
+        // Find the last station event that has been passed
+        var lastPassedIndex = -1
+        for (index, event) in events.enumerated() {
+            if event.timestamp <= targetTimestamp {
+                lastPassedIndex = index
+            } else {
+                break
+            }
+        }
+
+        currentStationPassIndex = lastPassedIndex
+    }
+
+    /// Determine if a railway segment should be included based on passed stations
+    private func shouldIncludeRailwaySegment(
+        _ segment: [CLLocationCoordinate2D],
+        forPassedStations passedStations: [CLLocationCoordinate2D]
+    ) -> Bool {
+        guard !segment.isEmpty, !passedStations.isEmpty else { return false }
+
+        // A segment is included if its endpoints are near any of the passed stations
+        let threshold: CLLocationDistance = 500 // meters
+
+        let segmentStart = CLLocation(latitude: segment.first!.latitude, longitude: segment.first!.longitude)
+        let segmentEnd = CLLocation(latitude: segment.last!.latitude, longitude: segment.last!.longitude)
+
+        var startsNearStation = false
+        var endsNearStation = false
+
+        for stationCoord in passedStations {
+            let stationLocation = CLLocation(latitude: stationCoord.latitude, longitude: stationCoord.longitude)
+            if segmentStart.distance(from: stationLocation) < threshold {
+                startsNearStation = true
+            }
+            if segmentEnd.distance(from: stationLocation) < threshold {
+                endsNearStation = true
+            }
+        }
+
+        return startsNearStation && endsNearStation
+    }
+
     /// Static markers for the map (start, end, stations)
     var staticMarkers: [TrackingPoint] {
         var markers: [TrackingPoint] = []
 
-        // Start marker
+        // Start marker (always show)
         if let first = sortedLocationPoints.first {
             markers.append(.startMarker(from: first))
         }
@@ -245,10 +381,12 @@ final class SessionDetailViewModel {
             markers.append(.endMarker(from: last, showTitle: true))
         }
 
-        // Station markers
-        for event in sortedStationEvents {
-            if let station = event.station {
-                markers.append(.from(station: station, timestamp: event.timestamp, eventId: event.id))
+        // Station markers (only if showStationMarkers is enabled)
+        if showStationMarkers {
+            for event in sortedStationEvents {
+                if let station = event.station {
+                    markers.append(.from(station: station, timestamp: event.timestamp, eventId: event.id))
+                }
             }
         }
 
@@ -337,8 +475,18 @@ final class SessionDetailViewModel {
         return journeyStart.addingTimeInterval(targetTimeOffset)
     }
 
-    /// Calculate the interpolated coordinate based on elapsed playback time
+    /// Calculate the interpolated coordinate based on elapsed playback time and route source mode
     func calculateInterpolatedPosition() -> CLLocationCoordinate2D? {
+        switch routeSourceMode {
+        case .gps:
+            return calculateGPSInterpolatedPosition()
+        case .railway:
+            return calculateRailwayInterpolatedPosition()
+        }
+    }
+
+    /// GPS-based interpolation (original implementation)
+    private func calculateGPSInterpolatedPosition() -> CLLocationCoordinate2D? {
         let points = sortedLocationPoints
         guard points.count >= 2,
               let journeyStart = points.first?.timestamp,
@@ -383,6 +531,20 @@ final class SessionDetailViewModel {
         let interpolatedLon = before.longitude + (after.longitude - before.longitude) * segmentProgress
 
         return CLLocationCoordinate2D(latitude: interpolatedLat, longitude: interpolatedLon)
+    }
+
+    /// Railway mode: snap to current station coordinate
+    /// If user's position leaves the railway, keep position at the last station
+    private func calculateRailwayInterpolatedPosition() -> CLLocationCoordinate2D? {
+        updateCurrentStationPassIndex()
+
+        // Return the current station coordinate (snap to station)
+        // If no station has been passed yet, return first station
+        if currentStationPassIndex < 0 {
+            return sortedStationEvents.first?.station?.coordinate
+        }
+
+        return currentStationCoordinate
     }
 
     /// Start time-based playback with configurable position update frequency
@@ -613,6 +775,12 @@ final class SessionDetailViewModel {
         analysisProgress = 0
         analysisError = nil
 
+        // Clear existing station pass events to prevent duplicates
+        for event in session.stationPassEvents {
+            modelContext?.delete(event)
+        }
+        session.stationPassEvents.removeAll()
+
         do {
             // Fetch stations along route
             await MainActor.run { analysisProgress = 0.2 }
@@ -621,6 +789,8 @@ final class SessionDetailViewModel {
                 coordinates: session.coordinates,
                 radiusMeters: 500
             )
+            
+            let deduplicatedStations = TrainStationService.deduplicateByName(stations)
 
             await MainActor.run { analysisProgress = 0.5 }
 
@@ -635,7 +805,8 @@ final class SessionDetailViewModel {
 
             // Save to SwiftData
             if let context = modelContext {
-                for station in stations {
+                for station in deduplicatedStations {
+                    print("Station name: \(station.name ?? "Unknown")")
                     context.insert(station)
                 }
                 for event in passEvents {

@@ -374,4 +374,231 @@ struct SessionDetailViewModelTests {
         #expect(viewModel.playbackDurationSeconds == 30.0)
         #expect(session.playbackDuration == 30.0)
     }
+
+    // MARK: - Route Source Selection Tests
+
+    @Test func routeSourceMode_defaultsToGPS() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Assert
+        #expect(viewModel.routeSourceMode == .gps)
+    }
+
+    @Test func routeSourceMode_persistsToSession() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Act
+        viewModel.routeSourceMode = .railway
+
+        // Assert
+        #expect(session.routeSourceMode == .railway)
+        #expect(session.routeSourceModeRawValue == "Railway")
+    }
+
+    @Test func routeSourceMode_loadsFromSession() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        session.routeSourceModeRawValue = RouteSourceMode.railway.rawValue
+
+        // Act
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Assert
+        #expect(viewModel.routeSourceMode == .railway)
+    }
+
+    // MARK: - Railway Mode Behavior Tests
+
+    @Test func railwayMode_positionSnapsToStation() async throws {
+        // Arrange: Create session with stations
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+        viewModel.routeSourceMode = .railway
+        viewModel.playbackDurationSeconds = 100.0
+
+        // Act: Seek to middle of playback (after first station)
+        viewModel.seekToProgress(0.5)
+        let position = viewModel.calculateInterpolatedPosition()
+
+        // Assert: Position should match a station coordinate
+        let stationCoords = session.stationPassEvents.compactMap { $0.station?.coordinate }
+        let matchesStation = stationCoords.contains { coord in
+            abs(coord.latitude - position!.latitude) < 0.0001 &&
+                abs(coord.longitude - position!.longitude) < 0.0001
+        }
+        #expect(matchesStation == true)
+    }
+
+    @Test func railwayMode_positionStaysAtLastStationWhenPastAllStations() async throws {
+        // Arrange
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+        viewModel.routeSourceMode = .railway
+        viewModel.playbackDurationSeconds = 100.0
+
+        // Act: Seek to end (past all stations)
+        viewModel.seekToProgress(1.0)
+        let position = viewModel.calculateInterpolatedPosition()
+
+        // Assert: Should be at last station
+        let lastStation = session.stationPassEvents.sorted { $0.timestamp < $1.timestamp }.last?.station
+        #expect(position?.latitude == lastStation?.latitude)
+        #expect(position?.longitude == lastStation?.longitude)
+    }
+
+    @Test func railwayMode_currentStationIndexUpdatesWithProgress() async throws {
+        // Arrange
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+        viewModel.routeSourceMode = .railway
+        viewModel.playbackDurationSeconds = 100.0
+
+        // Act: At beginning - no station passed
+        viewModel.seekToProgress(0.0)
+        _ = viewModel.calculateInterpolatedPosition()
+        let initialIndex = viewModel.currentStationPassIndex
+
+        // Act: At end - all stations passed
+        viewModel.seekToProgress(1.0)
+        _ = viewModel.calculateInterpolatedPosition()
+        let finalIndex = viewModel.currentStationPassIndex
+
+        // Assert
+        #expect(finalIndex > initialIndex)
+    }
+
+    // MARK: - Display Option Toggle Tests
+
+    @Test func displayOptions_defaultValues() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Assert
+        #expect(viewModel.showRailroad == true)
+        #expect(viewModel.showStationMarkers == true)
+        #expect(viewModel.showGPSLocationMarker == true)
+    }
+
+    @Test func displayOptions_persistToSession() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Act
+        viewModel.showRailroad = false
+        viewModel.showStationMarkers = false
+        viewModel.showGPSLocationMarker = false
+
+        // Assert
+        #expect(session.showRailroad == false)
+        #expect(session.showStationMarkers == false)
+        #expect(session.showGPSLocationMarker == false)
+    }
+
+    @Test func displayOptions_loadFromSession() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        session.showRailroad = false
+        session.showStationMarkers = false
+        session.showGPSLocationMarker = false
+
+        // Act
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Assert
+        #expect(viewModel.showRailroad == false)
+        #expect(viewModel.showStationMarkers == false)
+        #expect(viewModel.showGPSLocationMarker == false)
+    }
+
+    @Test func staticMarkers_excludesStationsWhenDisabled() async throws {
+        // Arrange
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Act: With station markers enabled
+        viewModel.showStationMarkers = true
+        let markersWithStations = viewModel.staticMarkers
+
+        // Act: With station markers disabled
+        viewModel.showStationMarkers = false
+        let markersWithoutStations = viewModel.staticMarkers
+
+        // Assert: Should have fewer markers when stations disabled
+        #expect(markersWithoutStations.count < markersWithStations.count)
+
+        // Should still have start and end markers
+        #expect(markersWithoutStations.contains { $0.type == .start })
+        #expect(markersWithoutStations.contains { $0.type == .end })
+
+        // Should not have station markers
+        #expect(!markersWithoutStations.contains { $0.type == .trainStation })
+    }
+
+    // MARK: - Traveled Coordinates Mode Tests
+
+    @Test func traveledCoordinates_gpsMode_returnsGPSPath() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 50, intervalSeconds: 1.0)
+        let viewModel = SessionDetailViewModel(session: session)
+        viewModel.routeSourceMode = .gps
+        viewModel.playbackDurationSeconds = 50.0
+
+        // Act
+        viewModel.seekToProgress(0.5)
+
+        // Assert: Should have coordinates from GPS path
+        let coords = viewModel.traveledCoordinates
+        #expect(!coords.isEmpty)
+        // First coordinate should match first GPS point
+        #expect(abs(coords.first!.latitude - 35.0) < 0.0001)
+    }
+
+    @Test func traveledCoordinates_railwayMode_emptyWithoutRailwayRoutes() async throws {
+        // Arrange
+        let session = createSessionWithStationsAndPoints()
+        let viewModel = SessionDetailViewModel(session: session)
+        viewModel.routeSourceMode = .railway
+        viewModel.playbackDurationSeconds = 100.0
+
+        // Act: Seek to middle (railway routes not loaded)
+        viewModel.seekToProgress(0.5)
+
+        // Assert: Without railway routes loaded, traveled coordinates should be empty
+        // (since stationDataViewModel.railwayRoutes is empty by default)
+        let coords = viewModel.traveledCoordinates
+        #expect(coords.isEmpty)
+    }
+
+    // MARK: - Helper: Create Session with Stations
+
+    private func createSessionWithStationsAndPoints() -> TrackingSession {
+        let session = createSessionWithPoints(count: 100, intervalSeconds: 1.0)
+        let startDate = session.sortedLocationPoints.first!.timestamp
+
+        for i in 0 ..< 3 {
+            let station = TrainStation(
+                osmId: Int64(i + 1000),
+                name: "Station \(i + 1)",
+                latitude: 35.0 + Double(i) * 0.01,
+                longitude: 139.0 + Double(i) * 0.01
+            )
+
+            let event = StationPassEvent(
+                timestamp: startDate.addingTimeInterval(Double(i + 1) * 30.0),
+                distanceFromStation: 50,
+                entryPointIndex: i * 30,
+                displayOrder: i
+            )
+            event.station = station
+            session.stationPassEvents.append(event)
+        }
+
+        return session
+    }
 }

@@ -19,8 +19,14 @@ protocol StationSearchProviding {
     func search(query: String, region: MKCoordinateRegion) async throws -> [MKMapItem]
 }
 
+// MARK: - Railway Route Segment
+
+struct RailwayRouteSegment {
+    let coordinates: [CLLocationCoordinate2D]
+}
+
 protocol RailwayRouteProviding {
-    func fetchRoutes(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D, buffer: Double) async throws -> [[[Double]]]
+    func fetchRoutes(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async throws -> [RailwayRouteSegment]
 }
 
 // MARK: - Apple Maps Station Provider
@@ -45,57 +51,58 @@ final class AppleMapsStationProvider: StationSearchProviding {
     }
 }
 
-// MARK: - Overpass Railway Provider
+// MARK: - OpenRailway Route Provider
 
-final class OverpassRailwayProvider: RailwayRouteProviding {
-    private let baseURL = "https://overpass-api.de/api/interpreter"
+final class OpenRailwayProvider: RailwayRouteProviding {
+    private let baseURL = "https://routing.openrailrouting.org/route"
 
-    struct OverpassWayResponse: Decodable {
-        let elements: [OverpassWayElement]
+    private struct OpenRailwayResponse: Decodable {
+        let paths: [OpenRailwayPath]
     }
 
-    struct OverpassWayElement: Decodable {
-        let type: String
-        let id: Int64
-        let geometry: [OverpassNode]?
-        let tags: [String: String]?
+    private struct OpenRailwayPath: Decodable {
+        let points: OpenRailwayPoints
     }
 
-    struct OverpassNode: Decodable {
-        let lat: Double
-        let lon: Double
+    private struct OpenRailwayPoints: Decodable {
+        let coordinates: [[Double]] // [[lon, lat], ...]
     }
 
-    func fetchRoutes(from startCoord: CLLocationCoordinate2D, to endCoord: CLLocationCoordinate2D, buffer: Double = 1000) async throws -> [[[Double]]] {
-        // Calculate bounding box
-        let minLat = min(startCoord.latitude, endCoord.latitude)
-        let maxLat = max(startCoord.latitude, endCoord.latitude)
-        let minLon = min(startCoord.longitude, endCoord.longitude)
-        let maxLon = max(startCoord.longitude, endCoord.longitude)
+    func fetchRoutes(from startCoord: CLLocationCoordinate2D, to endCoord: CLLocationCoordinate2D) async throws -> [RailwayRouteSegment] {
+        var components = URLComponents(string: baseURL)
+        components?.queryItems = [
+            URLQueryItem(name: "point", value: "\(startCoord.latitude),\(startCoord.longitude)"),
+            URLQueryItem(name: "point", value: "\(endCoord.latitude),\(endCoord.longitude)"),
+            URLQueryItem(name: "profile", value: "all_tracks"),
+            URLQueryItem(name: "locale", value: "en"),
+            URLQueryItem(name: "elevation", value: "false"),
+            URLQueryItem(name: "instructions", value: "false"),
+            URLQueryItem(name: "points_encoded", value: "false")
+        ]
 
-        let latBuffer = buffer / 111000.0
-        let lonBuffer = buffer / (111000.0 * cos(minLat * .pi / 180))
-
-        let bbox = "\(minLat - latBuffer),\(minLon - lonBuffer),\(maxLat + latBuffer),\(maxLon + lonBuffer)"
-
-        let query = """
-        [out:json][timeout:30];
-        way["railway"="rail"](\(bbox));
-        out geom;
-        """
-
-        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(baseURL)?data=\(encodedQuery)") else {
+        guard let url = components?.url else {
             throw URLError(.badURL)
         }
 
-        let (data, _) = try await URLSession.shared.data(from: url)
-        let response = try JSONDecoder().decode(OverpassWayResponse.self, from: data)
+        let (data, response) = try await URLSession.shared.data(from: url)
 
-        return response.elements.compactMap { element -> [[Double]]? in
-            guard let geometry = element.geometry, !geometry.isEmpty else { return nil }
-            return geometry.map { [$0.lat, $0.lon] }
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            throw URLError(.badServerResponse)
         }
+
+        let openRailwayResponse = try JSONDecoder().decode(OpenRailwayResponse.self, from: data)
+
+        guard let firstPath = openRailwayResponse.paths.first else {
+            return []
+        }
+
+        // Convert [[lon, lat]] to [CLLocationCoordinate2D]
+        let coordinates = firstPath.points.coordinates.map { coord in
+            CLLocationCoordinate2D(latitude: coord[1], longitude: coord[0])
+        }
+
+        return [RailwayRouteSegment(coordinates: coordinates)]
     }
 }
 
@@ -120,7 +127,7 @@ final class StationDataViewModel {
 
     init(
         stationProvider: StationSearchProviding = AppleMapsStationProvider(),
-        railwayProvider: RailwayRouteProviding = OverpassRailwayProvider()
+        railwayProvider: RailwayRouteProviding = OpenRailwayProvider()
     ) {
         self.stationProvider = stationProvider
         self.railwayProvider = railwayProvider
@@ -170,9 +177,9 @@ final class StationDataViewModel {
             let end = stations[i + 1].coordinate
 
             do {
-                let wayCoords = try await railwayProvider.fetchRoutes(from: start, to: end, buffer: 1000)
-                for coords in wayCoords {
-                    routes.append(coords.map { CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) })
+                let fetchedRoutes = try await railwayProvider.fetchRoutes(from: start, to: end)
+                for route in fetchedRoutes {
+                    routes.append(route.coordinates)
                 }
             } catch {
                 // Continue with next pair, log error
