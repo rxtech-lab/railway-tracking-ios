@@ -68,3 +68,7 @@ The app uses background location updates. Key configuration:
 ## Bug detection
 
 when bugs is hard to locate, add debug print and let user run the app and give you the debug log to locate the issue.
+
+## Testing
+
+for view model, write unit test to test the logic against the user requirement. For dependencies, create a protocol for that dependency and mock it in the test.

@@ -30,9 +30,9 @@ struct SessionDetailView: View {
                 routeCoordinates: viewModel.session.coordinates,
                 traveledCoordinates: viewModel.traveledCoordinates,
                 markers: viewModel.staticMarkers,
-                railwayRoutes: viewModel.stationDataViewModel.railwayRoutes,
+                railwayRoutes: viewModel.showRailroad ? viewModel.stationDataViewModel.railwayRoutes : [],
                 markerStyle: .currentPosition,
-                showCurrentPositionMarker: viewModel.showPlaybackMarker,
+                showCurrentPositionMarker: viewModel.showPlaybackMarker && viewModel.showGPSLocationMarker,
                 showRoutePolyline: false,
                 cameraDistance: viewModel.playbackCameraDistance,
                 onCameraDistanceChanged: { newDistance in

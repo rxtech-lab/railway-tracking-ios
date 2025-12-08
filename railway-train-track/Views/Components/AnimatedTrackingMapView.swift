@@ -120,7 +120,7 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
             // Railway track polylines
             ForEach(Array(railwayRoutes.enumerated()), id: \.offset) { _, route in
                 MapPolyline(coordinates: route)
-                    .stroke(.brown, style: StrokeStyle(lineWidth: 3, dash: [5, 3]))
+                    .stroke(.blue, lineWidth: 4)
             }
 
             // Static markers (start, end, stations)

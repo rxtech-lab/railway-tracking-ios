@@ -64,6 +64,27 @@ struct PlaybackSettingsContent: View {
                 }
             }
 
+            // Route Source Section (Mutually Exclusive)
+            Section("Route Source") {
+                Picker("Route Source", selection: $viewModel.routeSourceMode) {
+                    ForEach(RouteSourceMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Text(viewModel.routeSourceMode.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Display Options Section (Multiple Selection)
+            Section("Display Options") {
+                Toggle("Show Railroad", isOn: $viewModel.showRailroad)
+                Toggle("Show Station Markers", isOn: $viewModel.showStationMarkers)
+                Toggle("Show GPS Location Marker", isOn: $viewModel.showGPSLocationMarker)
+            }
+
             Section {
                 Text("Set the total playback duration to compress your journey. The position updates once per second during playback.")
                     .font(.caption)
