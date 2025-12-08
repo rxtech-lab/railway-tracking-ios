@@ -336,4 +336,42 @@ struct SessionDetailViewModelTests {
         // Cleanup
         viewModel.pauseTimeBasedPlayback()
     }
+
+    // MARK: - Playback Duration Persistence Tests
+
+    @Test func playbackDuration_loadsFromSession() async throws {
+        // Arrange: Create session with custom playback duration
+        let session = createSessionWithPoints(count: 10)
+        session.playbackDuration = 60.0
+
+        // Act
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Assert: ViewModel should load duration from session
+        #expect(viewModel.playbackDurationSeconds == 60.0)
+    }
+
+    @Test func playbackDuration_savesToSession() async throws {
+        // Arrange
+        let session = createSessionWithPoints(count: 10)
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Act: Change duration in ViewModel
+        viewModel.playbackDurationSeconds = 120.0
+
+        // Assert: Session model should be updated
+        #expect(session.playbackDuration == 120.0)
+    }
+
+    @Test func playbackDuration_defaultsTo30Seconds() async throws {
+        // Arrange: Create fresh session (default playbackDuration)
+        let session = createSessionWithPoints(count: 10)
+
+        // Act
+        let viewModel = SessionDetailViewModel(session: session)
+
+        // Assert: Default should be 30 seconds
+        #expect(viewModel.playbackDurationSeconds == 30.0)
+        #expect(session.playbackDuration == 30.0)
+    }
 }

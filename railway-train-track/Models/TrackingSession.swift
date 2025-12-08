@@ -26,6 +26,9 @@ final class TrackingSession {
     var totalDistance: Double? // meters
     var averageSpeed: Double? // m/s
 
+    // Playback settings
+    var playbackDuration: Double = 30.0 // seconds for playback animation
+
     @Relationship(deleteRule: .cascade, inverse: \LocationPoint.session)
     var locationPoints: [LocationPoint] = []
 

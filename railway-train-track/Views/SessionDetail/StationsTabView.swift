@@ -11,23 +11,82 @@ struct StationsTabView: View {
     @Bindable var viewModel: SessionDetailViewModel
 
     var body: some View {
-        VStack {
-            if viewModel.isAnalyzingStations {
-                // Analysis in progress
-                analysisProgressView
-            } else if !viewModel.session.stationAnalysisCompleted {
-                // Not yet analyzed
-                analyzePromptView
-            } else if viewModel.sortedStationEvents.isEmpty {
-                // No stations found
-                ContentUnavailableView(
-                    "No Stations Detected",
-                    systemImage: "train.side.front.car",
-                    description: Text("No train stations were detected along this route. Try analyzing a route that passes through known railway stations.")
-                )
-            } else {
-                // Station list with playback
-                stationListView
+        NavigationStack {
+            VStack {
+                if viewModel.isAnalyzingStations {
+                    // Analysis in progress
+                    analysisProgressView
+                } else if !viewModel.session.stationAnalysisCompleted {
+                    // Not yet analyzed
+                    analyzePromptView
+                } else if viewModel.sortedStationEvents.isEmpty {
+                    // No stations found
+                    VStack(spacing: 16) {
+                        ContentUnavailableView(
+                            "No Stations Detected",
+                            systemImage: "train.side.front.car",
+                            description: Text("No train stations were detected along this route. Try analyzing a route that passes through known railway stations.")
+                        )
+
+                        Button {
+                            viewModel.resetStationAnalysis()
+                            Task {
+                                await viewModel.analyzeStations()
+                            }
+                        } label: {
+                            Label("Retry Analysis", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                } else {
+                    // Station list with playback
+                    stationListView
+                }
+            }
+            .toolbar {
+                // Only show toolbar after analysis is completed with results
+                if viewModel.session.stationAnalysisCompleted && !viewModel.sortedStationEvents.isEmpty {
+                    ToolbarItem(placement: .bottomBar) {
+                        HStack(spacing: 12) {
+                            // Load railway lines button
+
+                            Button {
+                                Task {
+                                    await viewModel.fetchRailwayRoutes()
+                                }
+                            } label: {
+                                if viewModel.stationDataViewModel.isFetchingRailways {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                                }
+                            }
+                            .disabled(viewModel.stationDataViewModel.isFetchingRailways)
+
+                            // Reload button
+                            Button {
+                                viewModel.confirmRegenerateStations()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                        }
+                    }
+
+                    ToolbarItem(placement: .bottomBar) {
+                        HStack(spacing: 12) {
+                            // Add station button
+                            Button {
+                                viewModel.sheetContent = .stationSearch
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+
+                            // Edit button
+                            EditButton()
+                        }
+                    }
+                }
             }
         }
     }
@@ -99,23 +158,6 @@ struct StationsTabView: View {
             // Station playback controls
             StationPlaybackControlsView(viewModel: viewModel)
 
-            // Summary header
-            HStack {
-                Label("\(viewModel.sortedStationEvents.count) stations", systemImage: "train.side.front.car")
-                Spacer()
-                Button {
-                    viewModel.sheetContent = .stationSearch
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                }
-                EditButton()
-                    .font(.caption)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding()
-            .background(.ultraThinMaterial)
-
             // Station list
             List {
                 ForEach(Array(viewModel.sortedStationEvents.enumerated()), id: \.element.id) { index, event in
@@ -135,7 +177,7 @@ struct StationsTabView: View {
                     viewModel.moveStationEvents(from: source, to: destination)
                 }
             }
-            .listStyle(.plain)
+            .listStyle(.sidebar)
         }
         .confirmationDialog(
             "Delete Station?",
@@ -150,6 +192,20 @@ struct StationsTabView: View {
             if let station = viewModel.stationToDelete {
                 Text("Are you sure you want to remove \(station.stationName) from this journey?")
             }
+        }
+        .confirmationDialog(
+            "Regenerate Stations?",
+            isPresented: $viewModel.showRegenerateConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Regenerate", role: .destructive) {
+                Task {
+                    await viewModel.executeRegenerateStations()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will clear all \(viewModel.sortedStationEvents.count) existing stations and re-analyze the route. Manual station additions will be lost.")
         }
     }
 }
@@ -218,7 +274,7 @@ struct StationPlaybackControlsView: View {
                     get: { Double(viewModel.selectedStationIndex) },
                     set: { viewModel.seekToStation(index: Int($0)) }
                 ),
-                in: 0...Double(max(1, viewModel.totalStations - 1))
+                in: 0 ... Double(max(1, viewModel.totalStations - 1))
             )
             .disabled(viewModel.totalStations <= 1)
 
@@ -262,26 +318,6 @@ struct StationPlaybackControlsView: View {
                 Text("\(viewModel.selectedStationIndex + 1)/\(viewModel.totalStations)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-
-            // Fetch railway routes button
-            if viewModel.stationDataViewModel.railwayRoutes.isEmpty && !viewModel.sortedStationEvents.isEmpty {
-                Button {
-                    Task {
-                        await viewModel.fetchRailwayRoutes()
-                    }
-                } label: {
-                    if viewModel.stationDataViewModel.isFetchingRailways {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Label("Load Railway Lines", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                            .font(.caption)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(viewModel.stationDataViewModel.isFetchingRailways)
             }
         }
         .padding()

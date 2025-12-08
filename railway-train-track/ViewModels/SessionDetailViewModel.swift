@@ -51,7 +51,10 @@ final class SessionDetailViewModel {
     var showPlaybackMarker: Bool = false
 
     // Time-based playback state
-    var playbackDurationSeconds: Double = 30.0  // User-editable total playback duration
+    var playbackDurationSeconds: Double {
+        get { session.playbackDuration }
+        set { session.playbackDuration = newValue }
+    }
     var playbackElapsedTime: Double = 0.0       // Current elapsed time in playback
     var interpolatedCoordinate: CLLocationCoordinate2D?  // Smoothly interpolated position
     var positionUpdateFrequency: TimeInterval = 1.0  // How often to update position during playback
@@ -71,6 +74,7 @@ final class SessionDetailViewModel {
     // Station management state
     var stationToDelete: StationPassEvent?
     var showDeleteConfirmation: Bool = false
+    var showRegenerateConfirmation: Bool = false
 
     // Station data (unified ViewModel for search and railway routes)
     var stationDataViewModel = StationDataViewModel()
@@ -610,8 +614,6 @@ final class SessionDetailViewModel {
     // MARK: - Station Analysis
 
     func analyzeStations() async {
-        guard !session.stationAnalysisCompleted else { return }
-
         isAnalyzingStations = true
         analysisProgress = 0
         analysisError = nil
@@ -646,6 +648,7 @@ final class SessionDetailViewModel {
                     session.stationPassEvents.append(event)
                 }
 
+                try context.save()
                 session.stationAnalysisCompleted = true
                 session.stationAnalysisTimestamp = Date()
                 try context.save()
@@ -661,6 +664,21 @@ final class SessionDetailViewModel {
         await MainActor.run {
             isAnalyzingStations = false
         }
+    }
+
+    func resetStationAnalysis() {
+        // Clear existing station pass events
+        for event in session.stationPassEvents {
+            modelContext?.delete(event)
+        }
+        session.stationPassEvents.removeAll()
+
+        // Reset flags
+        session.stationAnalysisCompleted = false
+        session.stationAnalysisTimestamp = nil
+        analysisError = nil
+
+        try? modelContext?.save()
     }
 
     // MARK: - Station Management
@@ -692,6 +710,15 @@ final class SessionDetailViewModel {
         session.stationPassEvents.removeAll { $0.id == event.id }
         modelContext?.delete(event)
         try? modelContext?.save()
+    }
+
+    func confirmRegenerateStations() {
+        showRegenerateConfirmation = true
+    }
+
+    func executeRegenerateStations() async {
+        resetStationAnalysis()
+        await analyzeStations()
     }
 
     func addStationFromMapItem(_ mapItem: MKMapItem) {

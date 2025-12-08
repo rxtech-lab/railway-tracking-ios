@@ -45,7 +45,7 @@ struct SessionDetailView: View {
                 viewModel: viewModel,
                 exportViewModel: exportViewModel
             )
-            .presentationDetents(content == .tabBar ? [.height(200), .medium, .large] : [.medium, .large])
+            .presentationDetents(content == .tabBar ? [.height(300), .medium, .large] : [.medium, .large])
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(content == .tabBar ? .enabled : .disabled)
             .interactiveDismissDisabled()
@@ -192,14 +192,14 @@ struct SessionSheetContent: View {
             .padding()
 
             // Tab content
-            TabView(selection: $viewModel.selectedTab) {
+            switch viewModel.selectedTab {
+            case .locations:
                 LocationsTabView(viewModel: viewModel)
                     .tag(SessionTab.locations)
-
+            case .stations:
                 StationsTabView(viewModel: viewModel)
                     .tag(SessionTab.stations)
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
         }
     }
 }
