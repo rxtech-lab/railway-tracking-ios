@@ -452,7 +452,7 @@ final class SessionDetailViewModel {
         // Debug: print every 0.1 seconds
         if Int(playbackElapsedTime * 10) != Int((playbackElapsedTime - deltaTime) * 10) {
             // update camera
-            withAnimation(.linear(duration: 0.1)) {
+            withAnimation(.linear(duration: 0.05)) {
                 self.traveledCoordinates = traveledCoordinates
                 if let coord = interpolatedCoordinate {
                     mapCameraPosition = .camera(MapCamera(
