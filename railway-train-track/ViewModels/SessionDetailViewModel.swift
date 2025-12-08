@@ -55,9 +55,16 @@ final class SessionDetailViewModel {
         get { session.playbackDuration }
         set { session.playbackDuration = newValue }
     }
-    var playbackElapsedTime: Double = 0.0       // Current elapsed time in playback
-    var interpolatedCoordinate: CLLocationCoordinate2D?  // Smoothly interpolated position
-    var positionUpdateFrequency: TimeInterval = 1.0  // How often to update position during playback
+
+    var playbackCameraDistance: Double {
+        get { session.playbackCameraDistance }
+        set { session.playbackCameraDistance = newValue }
+    }
+
+    var playbackElapsedTime: Double = 0.0 // Current elapsed time in playback
+    var interpolatedCoordinate: CLLocationCoordinate2D? // Smoothly interpolated position
+    var traveledCoordinates: [CLLocationCoordinate2D] = [] // Traveled path up to current position
+    var positionUpdateFrequency: TimeInterval = 1.0 // How often to update position during playback
 
     // Sheet state
     var sheetContent: SheetContent = .tabBar
@@ -104,7 +111,7 @@ final class SessionDetailViewModel {
     }
 
     func setModelContext(_ context: ModelContext) {
-        self.modelContext = context
+        modelContext = context
     }
 
     // MARK: - Computed Properties
@@ -154,7 +161,8 @@ final class SessionDetailViewModel {
     var journeyDuration: TimeInterval {
         let points = sortedLocationPoints
         guard let first = points.first?.timestamp,
-              let last = points.last?.timestamp else {
+              let last = points.last?.timestamp
+        else {
             return 0
         }
         return last.timeIntervalSince(first)
@@ -194,14 +202,9 @@ final class SessionDetailViewModel {
         positionUpdateFrequency * 0.8
     }
 
-    /// Traveled coordinates up to the current interpolated position
-    var traveledCoordinatesForPlayback: [CLLocationCoordinate2D] {
+    /// Calculate traveled coordinates up to the current interpolated position
+    private func calculateTraveledCoordinates() -> [CLLocationCoordinate2D] {
         let points = sortedLocationPoints
-        guard points.count >= 2,
-              let journeyStart = points.first?.timestamp else {
-            return []
-        }
-
         let targetTimestamp = calculateTargetTimestamp()
 
         // Collect all points up to the target time
@@ -219,7 +222,8 @@ final class SessionDetailViewModel {
             if coords.isEmpty {
                 coords.append(interpolated)
             } else if let last = coords.last,
-                      last.latitude != interpolated.latitude || last.longitude != interpolated.longitude {
+                      last.latitude != interpolated.latitude || last.longitude != interpolated.longitude
+            {
                 coords.append(interpolated)
             }
         }
@@ -244,7 +248,7 @@ final class SessionDetailViewModel {
         // Station markers
         for event in sortedStationEvents {
             if let station = event.station {
-                markers.append(.from(station: station, timestamp: event.timestamp))
+                markers.append(.from(station: station, timestamp: event.timestamp, eventId: event.id))
             }
         }
 
@@ -293,35 +297,10 @@ final class SessionDetailViewModel {
 
     // MARK: - Playback Animation
 
-    func startPlayback() {
-        guard !sortedLocationPoints.isEmpty else { return }
-
-        // Reset to beginning if at the end
-        if selectedLocationIndex >= totalLocationPoints - 1 {
-            selectedLocationIndex = 0
-        }
-
-        isPlayingAnimation = true
-        showPlaybackMarker = true
-
-        let interval = 0.3 // ~3 points per second
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            self?.advancePlayback()
-        }
-    }
-
     func pausePlayback() {
         isPlayingAnimation = false
         playbackTimer?.invalidate()
         playbackTimer = nil
-    }
-
-    func togglePlayback() {
-        if isPlayingAnimation {
-            pausePlayback()
-        } else {
-            startPlayback()
-        }
     }
 
     func seekTo(index: Int) {
@@ -338,21 +317,10 @@ final class SessionDetailViewModel {
         seekTo(index: totalLocationPoints - 1)
     }
 
-    private func advancePlayback() {
-        if selectedLocationIndex < totalLocationPoints - 1 {
-            selectedLocationIndex += 1
-            // Camera animation handled by mapCameraKeyframeAnimator in view
-        } else {
-            pausePlayback()
-            showPlaybackMarker = false
-            // Don't reset index here - marker is hidden anyway
-        }
-    }
-
     private func updateMapForCurrentLocation() {
         guard let point = currentLocationPoint else { return }
         mapCameraPosition = .camera(
-            MapCamera(centerCoordinate: point.coordinate, distance: 2000)
+            MapCamera(centerCoordinate: point.coordinate, distance: playbackCameraDistance)
         )
     }
 
@@ -374,7 +342,8 @@ final class SessionDetailViewModel {
         let points = sortedLocationPoints
         guard points.count >= 2,
               let journeyStart = points.first?.timestamp,
-              journeyDuration > 0 else {
+              journeyDuration > 0
+        else {
             return points.first?.coordinate
         }
 
@@ -430,8 +399,9 @@ final class SessionDetailViewModel {
         showPlaybackMarker = true
         positionUpdateFrequency = currentPositionUpdateFrequency
 
-        // Initial position update
+        // Initial position and traveled path update
         interpolatedCoordinate = calculateInterpolatedPosition()
+        traveledCoordinates = calculateTraveledCoordinates()
 
         // Use DisplayLink for smooth 60fps animation
         lastDisplayLinkTimestamp = 0
@@ -461,13 +431,37 @@ final class SessionDetailViewModel {
         if playbackElapsedTime >= playbackDurationSeconds {
             playbackElapsedTime = playbackDurationSeconds
             interpolatedCoordinate = calculateInterpolatedPosition()
+            traveledCoordinates = calculateTraveledCoordinates()
+            if let coord = interpolatedCoordinate {
+                withAnimation(.linear(duration: 0.016)) {
+                    mapCameraPosition = .camera(MapCamera(
+                        centerCoordinate: coord,
+                        distance: playbackCameraDistance
+                    ))
+                }
+            }
             pauseTimeBasedPlayback()
             showPlaybackMarker = false
             return
         }
 
-        // Update position every frame
+        // Update position and traveled path every frame
         interpolatedCoordinate = calculateInterpolatedPosition()
+        let traveledCoordinates = calculateTraveledCoordinates()
+
+        // Debug: print every 0.1 seconds
+        if Int(playbackElapsedTime * 10) != Int((playbackElapsedTime - deltaTime) * 10) {
+            // update camera
+            withAnimation(.linear(duration: 0.05)) {
+                self.traveledCoordinates = traveledCoordinates
+                if let coord = interpolatedCoordinate {
+                    mapCameraPosition = .camera(MapCamera(
+                        centerCoordinate: coord,
+                        distance: playbackCameraDistance
+                    ))
+                }
+            }
+        }
     }
 
     private func stopDisplayLink() {
@@ -511,12 +505,13 @@ final class SessionDetailViewModel {
     func seekToTime(_ time: Double) {
         playbackElapsedTime = max(0, min(time, playbackDurationSeconds))
         interpolatedCoordinate = calculateInterpolatedPosition()
+        traveledCoordinates = calculateTraveledCoordinates()
         showPlaybackMarker = true
 
         // Update map camera to follow interpolated position
         if let coord = interpolatedCoordinate {
             mapCameraPosition = .camera(
-                MapCamera(centerCoordinate: coord, distance: 2000)
+                MapCamera(centerCoordinate: coord, distance: playbackCameraDistance)
             )
         }
     }
@@ -600,7 +595,7 @@ final class SessionDetailViewModel {
         guard let event = currentStationEvent,
               let station = event.station else { return }
         mapCameraPosition = .camera(
-            MapCamera(centerCoordinate: station.coordinate, distance: 5000)
+            MapCamera(centerCoordinate: station.coordinate, distance: playbackCameraDistance)
         )
     }
 
@@ -727,7 +722,7 @@ final class SessionDetailViewModel {
 
         // Create or find TrainStation
         let station = TrainStation(
-            osmId: Int64(mapItem.hash),  // Use hash as pseudo-ID for Apple Maps results
+            osmId: Int64(mapItem.hash), // Use hash as pseudo-ID for Apple Maps results
             name: mapItem.name ?? "Unknown Station",
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -740,7 +735,7 @@ final class SessionDetailViewModel {
             timestamp: Date(),
             distanceFromStation: 0,
             entryPointIndex: selectedLocationIndex,
-            displayOrder: sortedStationEvents.count  // Add at end
+            displayOrder: sortedStationEvents.count // Add at end
         )
         event.station = station
         event.session = session

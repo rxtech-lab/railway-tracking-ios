@@ -5,9 +5,9 @@
 //  Created by Qiwei Li on 12/6/25.
 //
 
+import CoreLocation
 import Foundation
 import SwiftData
-import CoreLocation
 
 @Model
 final class TrackingSession {
@@ -28,6 +28,7 @@ final class TrackingSession {
 
     // Playback settings
     var playbackDuration: Double = 30.0 // seconds for playback animation
+    var playbackCameraDistance: Double = 2000.0 // meters for camera zoom level
 
     @Relationship(deleteRule: .cascade, inverse: \LocationPoint.session)
     var locationPoints: [LocationPoint] = []

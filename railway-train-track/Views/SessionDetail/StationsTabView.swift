@@ -155,8 +155,8 @@ struct StationsTabView: View {
 
     private var stationListView: some View {
         VStack(spacing: 0) {
-            // Station playback controls
-            StationPlaybackControlsView(viewModel: viewModel)
+            // Playback controls
+            PlaybackControlsView(viewModel: viewModel)
 
             // Station list
             List {
@@ -258,70 +258,6 @@ struct StationRowView: View {
                 .clipShape(Circle())
         }
         .padding(.vertical, 4)
-    }
-}
-
-// MARK: - Station Playback Controls View
-
-struct StationPlaybackControlsView: View {
-    @Bindable var viewModel: SessionDetailViewModel
-
-    var body: some View {
-        VStack(spacing: 8) {
-            // Progress slider
-            Slider(
-                value: Binding(
-                    get: { Double(viewModel.selectedStationIndex) },
-                    set: { viewModel.seekToStation(index: Int($0)) }
-                ),
-                in: 0 ... Double(max(1, viewModel.totalStations - 1))
-            )
-            .disabled(viewModel.totalStations <= 1)
-
-            HStack {
-                // Current station name
-                if let event = viewModel.currentStationEvent {
-                    Text(event.stationName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                // Playback controls
-                HStack(spacing: 20) {
-                    Button {
-                        viewModel.seekToFirstStation()
-                    } label: {
-                        Image(systemName: "backward.end.fill")
-                    }
-
-                    Button {
-                        viewModel.toggleStationPlayback()
-                    } label: {
-                        Image(systemName: viewModel.isPlayingStationAnimation ? "pause.fill" : "play.fill")
-                            .font(.title2)
-                    }
-
-                    Button {
-                        viewModel.seekToLastStation()
-                    } label: {
-                        Image(systemName: "forward.end.fill")
-                    }
-                }
-                .disabled(viewModel.totalStations <= 1)
-
-                Spacer()
-
-                // Station count
-                Text("\(viewModel.selectedStationIndex + 1)/\(viewModel.totalStations)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial)
     }
 }
 

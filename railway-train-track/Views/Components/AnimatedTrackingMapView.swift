@@ -39,13 +39,19 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
 
     let showRoutePolyline: Bool
 
+    /// Camera distance in meters for zoom level
+    let cameraDistance: Double
+
+    /// Callback when user changes camera distance (zoom)
+    let onCameraDistanceChanged: ((Double) -> Void)?
+
     /// Additional map content (annotations, markers, etc.)
     @MapContentBuilder let additionalContent: () -> Content
 
     enum MarkerStyle {
-        case currentPosition  // Red dot with white border (playback)
-        case liveTracking     // Blue dot with white border (active session)
-        case none             // No marker
+        case currentPosition // Red dot with white border (playback)
+        case liveTracking // Blue dot with white border (active session)
+        case none // No marker
 
         var fillColor: Color {
             switch self {
@@ -75,6 +81,8 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         markerStyle: MarkerStyle = .currentPosition,
         showCurrentPositionMarker: Bool = true,
         showRoutePolyline: Bool = true,
+        cameraDistance: Double = 2000.0,
+        onCameraDistanceChanged: ((Double) -> Void)? = nil,
         @MapContentBuilder additionalContent: @escaping () -> Content
     ) {
         self._cameraPosition = cameraPosition
@@ -88,6 +96,8 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         self.showCurrentPositionMarker = showCurrentPositionMarker
         self.additionalContent = additionalContent
         self.showRoutePolyline = showRoutePolyline
+        self.cameraDistance = cameraDistance
+        self.onCameraDistanceChanged = onCameraDistanceChanged
     }
 
     var body: some View {
@@ -99,9 +109,12 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
             }
 
             // Traveled route polyline (highlighted)
-            if traveledCoordinates.count > 1 {
+            // Compute unique ID from last coordinate to force re-render
+            if traveledCoordinates.count > 1, let last = traveledCoordinates.last {
+                let polylineId = "\(last.latitude),\(last.longitude)"
                 MapPolyline(coordinates: traveledCoordinates)
                     .stroke(.blue, lineWidth: 4)
+                    .tag(polylineId)
             }
 
             // Railway track polylines
@@ -139,6 +152,23 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
             MapScaleView()
             MapUserLocationButton()
         }
+        .onMapCameraChange { context in
+            // Notify parent when user changes zoom level
+            let newDistance = context.camera.distance
+            onCameraDistanceChanged?(newDistance)
+        }
+    }
+
+    private func updateCameraToFollowCurrentLocation() {
+        guard let coord = currentCoordinate else { return }
+        withAnimation(.easeInOut(duration: animationDuration)) {
+            cameraPosition = .camera(MapCamera(
+                centerCoordinate: coord,
+                distance: cameraDistance,
+                heading: 0,
+                pitch: 0
+            ))
+        }
     }
 }
 
@@ -172,7 +202,9 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         railwayRoutes: [[CLLocationCoordinate2D]] = [],
         markerStyle: MarkerStyle = .currentPosition,
         showCurrentPositionMarker: Bool = true,
-        showRoutePolyline: Bool = true
+        showRoutePolyline: Bool = true,
+        cameraDistance: Double = 2000.0,
+        onCameraDistanceChanged: ((Double) -> Void)? = nil
     ) {
         self._cameraPosition = cameraPosition
         self.currentCoordinate = currentCoordinate
@@ -184,6 +216,8 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         self.markerStyle = markerStyle
         self.showCurrentPositionMarker = showCurrentPositionMarker
         self.showRoutePolyline = showRoutePolyline
+        self.cameraDistance = cameraDistance
+        self.onCameraDistanceChanged = onCameraDistanceChanged
         self.additionalContent = { EmptyMapContent() }
     }
 }

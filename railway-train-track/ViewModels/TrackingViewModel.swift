@@ -5,9 +5,9 @@
 //  Created by Qiwei Li on 12/6/25.
 //
 
+import CoreLocation
 import Foundation
 import SwiftData
-import CoreLocation
 import SwiftUI
 
 @Observable
@@ -46,7 +46,7 @@ final class TrackingViewModel {
     }
 
     func setModelContext(_ context: ModelContext) {
-        self.modelContext = context
+        modelContext = context
     }
 
     private func setupLocationCallbacks() {
@@ -69,7 +69,7 @@ final class TrackingViewModel {
 
     var canTrack: Bool {
         locationAuthorizationStatus == .authorizedAlways ||
-        locationAuthorizationStatus == .authorizedWhenInUse
+            locationAuthorizationStatus == .authorizedWhenInUse
     }
 
     var hasActiveSession: Bool {
@@ -189,7 +189,7 @@ final class TrackingViewModel {
         // Calculate total distance
         var totalDistance: Double = 0
         for i in 1..<points.count {
-            let prev = points[i-1].clLocation
+            let prev = points[i - 1].clLocation
             let curr = points[i].clLocation
             totalDistance += curr.distance(from: prev)
         }
@@ -234,7 +234,7 @@ final class TrackingViewModel {
 
     func updateRecordingInterval(_ interval: Double) {
         recordingInterval = max(0.1, min(60.0, interval))
-        if isTracking && !isPaused {
+        if isTracking, !isPaused {
             locationManager.updateInterval(recordingInterval)
         }
     }
@@ -243,7 +243,8 @@ final class TrackingViewModel {
 
     func checkForRecoverableSession() {
         guard let sessionId = activeSessionId,
-              let context = modelContext else {
+              let context = modelContext
+        else {
             return
         }
 
