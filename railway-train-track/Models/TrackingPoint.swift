@@ -102,9 +102,9 @@ extension TrackingPoint {
     }
 
     /// Create a TrackingPoint from a TrainStation
-    static func from(station: TrainStation, timestamp: Date) -> TrackingPoint {
+    static func from(station: TrainStation, timestamp: Date, eventId: UUID) -> TrackingPoint {
         TrackingPoint(
-            id: UUID(),
+            id: eventId,
             title: station.name,
             type: .trainStation,
             location: station.coordinate,

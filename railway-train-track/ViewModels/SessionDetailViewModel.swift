@@ -244,7 +244,7 @@ final class SessionDetailViewModel {
         // Station markers
         for event in sortedStationEvents {
             if let station = event.station {
-                markers.append(.from(station: station, timestamp: event.timestamp))
+                markers.append(.from(station: station, timestamp: event.timestamp, eventId: event.id))
             }
         }
 

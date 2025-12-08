@@ -139,6 +139,24 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
             MapScaleView()
             MapUserLocationButton()
         }
+        .onChange(of: currentCoordinate?.latitude) { _, _ in
+            updateCameraToFollowCurrentLocation()
+        }
+        .onChange(of: currentCoordinate?.longitude) { _, _ in
+            updateCameraToFollowCurrentLocation()
+        }
+    }
+
+    private func updateCameraToFollowCurrentLocation() {
+        guard let coord = currentCoordinate else { return }
+        withAnimation(.easeInOut(duration: animationDuration)) {
+            cameraPosition = .camera(MapCamera(
+                centerCoordinate: coord,
+                distance: 1000,
+                heading: 0,
+                pitch: 0
+            ))
+        }
     }
 }
 
