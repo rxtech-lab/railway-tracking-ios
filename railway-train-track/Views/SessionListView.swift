@@ -38,14 +38,12 @@ struct SessionListView: View {
                                 ForEach(daySessions) { session in
                                     sessionRow(for: session)
                                         .contextMenu {
-                                            if !session.isActive && !trackingViewModel.hasActiveSession {
-                                                Button {
-                                                    trackingViewModel.resumeFinishedSession(session)
-                                                    selectedActiveSession = session
-                                                } label: {
-                                                    Label("Resume Tracking", systemImage: "play.fill")
-                                                }
+                                            ResumeTrackingButton(session: session) {
+                                                selectedActiveSession = session
                                             }
+
+                                            StopAndPauseTrackingButton(showPauseButton: false)
+
                                             Button(role: .destructive) {
                                                 sessionToDelete = session
                                                 showDeleteConfirmation = true
@@ -112,11 +110,8 @@ struct SessionListView: View {
                     trackingViewModel.resumeRecoveredSession()
                     selectedActiveSession = trackingViewModel.currentSession
                 }
-                Button("Discard", role: .destructive) {
+                Button("Discard", role: .cancel) {
                     trackingViewModel.discardRecoveredSession()
-                }
-                Button("Cancel", role: .cancel) {
-                    trackingViewModel.dismissRecoveryPrompt()
                 }
             } message: {
                 Text("You have an active recording session that was interrupted. Would you like to resume it?")

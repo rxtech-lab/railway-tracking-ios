@@ -45,6 +45,12 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
     /// Callback when user changes camera distance (zoom)
     let onCameraDistanceChanged: ((Double) -> Void)?
 
+    /// Callback when user long presses on the map
+    let onLongPress: ((CLLocationCoordinate2D) -> Void)?
+
+    /// Callback when user taps on a marker
+    let onMarkerTap: ((TrackingPoint) -> Void)?
+
     /// Additional map content (annotations, markers, etc.)
     @MapContentBuilder let additionalContent: () -> Content
 
@@ -83,6 +89,8 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         showRoutePolyline: Bool = true,
         cameraDistance: Double = 2000.0,
         onCameraDistanceChanged: ((Double) -> Void)? = nil,
+        onLongPress: ((CLLocationCoordinate2D) -> Void)? = nil,
+        onMarkerTap: ((TrackingPoint) -> Void)? = nil,
         @MapContentBuilder additionalContent: @escaping () -> Content
     ) {
         self._cameraPosition = cameraPosition
@@ -98,64 +106,88 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         self.showRoutePolyline = showRoutePolyline
         self.cameraDistance = cameraDistance
         self.onCameraDistanceChanged = onCameraDistanceChanged
+        self.onLongPress = onLongPress
+        self.onMarkerTap = onMarkerTap
     }
 
+    @GestureState private var longPressLocation: CGPoint = .zero
+
     var body: some View {
-        Map(position: $cameraPosition) {
-            // Full route polyline (faded)
-            if showRoutePolyline && routeCoordinates.count > 1 {
-                MapPolyline(coordinates: routeCoordinates)
-                    .stroke(.blue.opacity(0.5), lineWidth: 3)
-            }
-
-            // Traveled route polyline (highlighted)
-            // Compute unique ID from last coordinate to force re-render
-            if traveledCoordinates.count > 1, let last = traveledCoordinates.last {
-                let polylineId = "\(last.latitude),\(last.longitude)"
-                MapPolyline(coordinates: traveledCoordinates)
-                    .stroke(.blue, lineWidth: 4)
-                    .tag(polylineId)
-            }
-
-            // Railway track polylines
-            ForEach(Array(railwayRoutes.enumerated()), id: \.offset) { _, route in
-                MapPolyline(coordinates: route)
-                    .stroke(.blue, lineWidth: 4)
-            }
-
-            // Static markers (start, end, stations)
-            ForEach(markers) { marker in
-                Annotation(marker.title ?? "", coordinate: marker.location) {
-                    TrackingPointMarkerView(point: marker)
+        MapReader { proxy in
+            Map(position: $cameraPosition) {
+                // Full route polyline (faded)
+                if showRoutePolyline && routeCoordinates.count > 1 {
+                    MapPolyline(coordinates: routeCoordinates)
+                        .stroke(.blue.opacity(0.5), lineWidth: 3)
                 }
-            }
 
-            // Current position marker (updated every frame via DisplayLink)
-            if showCurrentPositionMarker, let coord = currentCoordinate, markerStyle != .none {
-                Annotation("", coordinate: coord) {
-                    ZStack {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: markerStyle.size + 6, height: markerStyle.size + 6)
-                        Circle()
-                            .fill(markerStyle.fillColor)
-                            .frame(width: markerStyle.size, height: markerStyle.size)
+                // Traveled route polyline (highlighted)
+                // Compute unique ID from last coordinate to force re-render
+                if traveledCoordinates.count > 1, let last = traveledCoordinates.last {
+                    let polylineId = "\(last.latitude),\(last.longitude)"
+                    MapPolyline(coordinates: traveledCoordinates)
+                        .stroke(.blue, lineWidth: 4)
+                        .tag(polylineId)
+                }
+
+                // Railway track polylines
+                ForEach(Array(railwayRoutes.enumerated()), id: \.offset) { _, route in
+                    MapPolyline(coordinates: route)
+                        .stroke(.blue, lineWidth: 4)
+                }
+
+                // Static markers (start, end, stations, notes)
+                ForEach(markers) { marker in
+                    Annotation(marker.title ?? "", coordinate: marker.location) {
+                        TrackingPointMarkerView(point: marker)
+                            .onTapGesture {
+                                onMarkerTap?(marker)
+                            }
                     }
                 }
-            }
 
-            // Additional custom content
-            additionalContent()
-        }
-        .mapControls {
-            MapCompass()
-            MapScaleView()
-            MapUserLocationButton()
-        }
-        .onMapCameraChange { context in
-            // Notify parent when user changes zoom level
-            let newDistance = context.camera.distance
-            onCameraDistanceChanged?(newDistance)
+                // Current position marker (updated every frame via DisplayLink)
+                if showCurrentPositionMarker, let coord = currentCoordinate, markerStyle != .none {
+                    Annotation("", coordinate: coord) {
+                        ZStack {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: markerStyle.size + 6, height: markerStyle.size + 6)
+                            Circle()
+                                .fill(markerStyle.fillColor)
+                                .frame(width: markerStyle.size, height: markerStyle.size)
+                        }
+                    }
+                }
+
+                // Additional custom content
+                additionalContent()
+            }
+            .mapControls {
+                MapCompass()
+                MapScaleView()
+                MapUserLocationButton()
+            }
+            .onMapCameraChange { context in
+                // Notify parent when user changes zoom level
+                let newDistance = context.camera.distance
+                onCameraDistanceChanged?(newDistance)
+            }
+            .gesture(
+                LongPressGesture(minimumDuration: 0.5)
+                    .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+                    .onEnded { value in
+                        switch value {
+                        case .second(true, let drag):
+                            if let location = drag?.location,
+                               let coordinate = proxy.convert(location, from: .local) {
+                                onLongPress?(coordinate)
+                            }
+                        default:
+                            break
+                        }
+                    }
+            )
         }
     }
 
@@ -177,15 +209,31 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
 struct TrackingPointMarkerView: View {
     let point: TrackingPoint
 
+    private var markerSize: CGFloat {
+        point.isSelected ? point.type.selectedMarkerSize : point.type.markerSize
+    }
+
+    private var iconSize: CGFloat {
+        point.isSelected ? point.type.selectedIconSize : point.type.iconSize
+    }
+
     var body: some View {
         ZStack {
+            // Selection ring (visible when selected)
+            if point.isSelected {
+                Circle()
+                    .stroke(point.type.backgroundColor.opacity(0.5), lineWidth: 3)
+                    .frame(width: markerSize + 8, height: markerSize + 8)
+            }
+
             Circle()
                 .fill(point.type.backgroundColor)
-                .frame(width: point.type.markerSize, height: point.type.markerSize)
+                .frame(width: markerSize, height: markerSize)
             Image(systemName: point.type.iconName)
-                .font(.system(size: point.type.iconSize))
+                .font(.system(size: iconSize))
                 .foregroundStyle(point.type.iconColor)
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: point.isSelected)
     }
 }
 
@@ -204,7 +252,9 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         showCurrentPositionMarker: Bool = true,
         showRoutePolyline: Bool = true,
         cameraDistance: Double = 2000.0,
-        onCameraDistanceChanged: ((Double) -> Void)? = nil
+        onCameraDistanceChanged: ((Double) -> Void)? = nil,
+        onLongPress: ((CLLocationCoordinate2D) -> Void)? = nil,
+        onMarkerTap: ((TrackingPoint) -> Void)? = nil
     ) {
         self._cameraPosition = cameraPosition
         self.currentCoordinate = currentCoordinate
@@ -218,6 +268,8 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         self.showRoutePolyline = showRoutePolyline
         self.cameraDistance = cameraDistance
         self.onCameraDistanceChanged = onCameraDistanceChanged
+        self.onLongPress = onLongPress
+        self.onMarkerTap = onMarkerTap
         self.additionalContent = { EmptyMapContent() }
     }
 }

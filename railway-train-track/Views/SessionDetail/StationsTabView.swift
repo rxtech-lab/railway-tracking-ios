@@ -177,6 +177,7 @@ struct StationsTabView: View {
                     viewModel.moveStationEvents(from: source, to: destination)
                 }
             }
+            .scrollContentBackground(.hidden)
             .listStyle(.sidebar)
         }
         .confirmationDialog(

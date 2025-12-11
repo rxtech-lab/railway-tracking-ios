@@ -22,6 +22,9 @@ final class TrainStation {
     @Relationship(inverse: \StationPassEvent.station)
     var passEvents: [StationPassEvent] = []
 
+    @Relationship(inverse: \SessionNote.linkedStation)
+    var linkedNotes: [SessionNote] = []
+
     init(
         osmId: Int64,
         name: String,

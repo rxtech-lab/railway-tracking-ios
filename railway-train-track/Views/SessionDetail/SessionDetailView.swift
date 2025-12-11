@@ -20,55 +20,70 @@ struct SessionDetailView: View {
         _viewModel = State(initialValue: SessionDetailViewModel(session: session))
     }
 
-    var body: some View {
-        ZStack {
-            // Background Map using unified AnimatedTrackingMapView
-            AnimatedTrackingMapView(
-                cameraPosition: $viewModel.mapCameraPosition,
-                currentCoordinate: viewModel.interpolatedCoordinate,
-                animationDuration: viewModel.playbackAnimationDuration,
-                routeCoordinates: viewModel.session.coordinates,
-                traveledCoordinates: viewModel.traveledCoordinates,
-                markers: viewModel.staticMarkers,
-                railwayRoutes: viewModel.showRailroad ? viewModel.stationDataViewModel.railwayRoutes : [],
-                markerStyle: .currentPosition,
-                showCurrentPositionMarker: viewModel.showPlaybackMarker && viewModel.showGPSLocationMarker,
-                showRoutePolyline: false,
-                cameraDistance: viewModel.playbackCameraDistance,
-                onCameraDistanceChanged: { newDistance in
-                    viewModel.playbackCameraDistance = newDistance
-                }
-            )
-            .ignoresSafeArea()
-        }
-        .sheet(item: Binding(
+    private var sheetBinding: Binding<SheetContent?> {
+        Binding<SheetContent?>(
             get: { viewModel.sheetContent },
             set: { viewModel.sheetContent = $0 ?? .tabBar }
-        )) { content in
-            SheetContentView(
-                content: content,
+        )
+    }
+
+    private var mapView: some View {
+        AnimatedTrackingMapView(
+            cameraPosition: $viewModel.mapCameraPosition,
+            currentCoordinate: viewModel.interpolatedCoordinate,
+            animationDuration: viewModel.playbackAnimationDuration,
+            routeCoordinates: viewModel.session.coordinates,
+            traveledCoordinates: viewModel.traveledCoordinates,
+            markers: viewModel.staticMarkers,
+            railwayRoutes: viewModel.showRailroad ? viewModel.stationDataViewModel.railwayRoutes : [],
+            markerStyle: .currentPosition,
+            showCurrentPositionMarker: viewModel.showPlaybackMarker && viewModel.showGPSLocationMarker,
+            showRoutePolyline: false,
+            cameraDistance: viewModel.playbackCameraDistance,
+            onCameraDistanceChanged: { newDistance in
+                viewModel.playbackCameraDistance = newDistance
+            },
+            onLongPress: { coordinate in
+                viewModel.handleMapLongPress(coordinate)
+            },
+            onMarkerTap: { marker in
+                viewModel.handleMarkerTap(marker)
+            }
+        )
+        .ignoresSafeArea()
+    }
+
+    private var toolbarContent: some View {
+        HStack(spacing: 16) {
+            Button {
+                viewModel.addNoteAtCurrentPlaybackPosition()
+            } label: {
+                Image(systemName: "note.text.badge.plus")
+            }
+
+            Button {
+                viewModel.sheetContent = .playbackSettings
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+            }
+
+            ExportMenuButton(
                 viewModel: viewModel,
                 exportViewModel: exportViewModel
             )
-            .presentationDetents(content == .tabBar ? [.height(300), .medium, .large] : [.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(content == .tabBar ? .enabled : .disabled)
-            .interactiveDismissDisabled()
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            mapView
+        }
+        .sheet(item: sheetBinding) { content in
+            sheetView(for: content)
         }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: 16) {
-                    Button {
-                        viewModel.sheetContent = .playbackSettings
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                    }
-
-                    ExportMenuButton(
-                        viewModel: viewModel,
-                        exportViewModel: exportViewModel
-                    )
-                }
+                toolbarContent
             }
         }
         .navigationTitle(viewModel.session.name)
@@ -77,6 +92,19 @@ struct SessionDetailView: View {
             viewModel.setModelContext(modelContext)
             exportViewModel.setDefaultFilename(from: viewModel.session)
         }
+    }
+
+    @ViewBuilder
+    private func sheetView(for content: SheetContent) -> some View {
+        SheetContentView(
+            content: content,
+            viewModel: viewModel,
+            exportViewModel: exportViewModel
+        )
+        .presentationDetents(content.isTabBar ? [.height(300), .medium, .large] : [.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackgroundInteraction(content.isTabBar ? .enabled : .disabled)
+        .interactiveDismissDisabled()
     }
 }
 
@@ -175,6 +203,12 @@ struct SheetContentView: View {
                     }
                 }
             }
+
+        case .noteEditor(let context):
+            NoteEditorView(context: context, viewModel: viewModel)
+
+        case .noteDetail(let note):
+            NoteDetailView(note: note, viewModel: viewModel)
         }
     }
 }
@@ -204,6 +238,9 @@ struct SessionSheetContent: View {
             case .stations:
                 StationsTabView(viewModel: viewModel)
                     .tag(SessionTab.stations)
+            case .notes:
+                NotesTabView(viewModel: viewModel)
+                    .tag(SessionTab.notes)
             }
         }
     }
@@ -213,6 +250,6 @@ struct SessionSheetContent: View {
     NavigationStack {
         SessionDetailView(session: TrackingSession(name: "Test Session"))
     }
-    .modelContainer(for: [TrackingSession.self, LocationPoint.self, TrainStation.self, StationPassEvent.self], inMemory: true)
+    .modelContainer(for: [TrackingSession.self, LocationPoint.self, TrainStation.self, StationPassEvent.self, SessionNote.self, SessionPhoto.self], inMemory: true)
     .environment(TrackingViewModel())
 }

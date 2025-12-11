@@ -15,6 +15,7 @@ enum TrackingPointType: Equatable {
     case end
     case trainStation
     case waypoint
+    case note
 
     var iconName: String {
         switch self {
@@ -22,6 +23,7 @@ enum TrackingPointType: Equatable {
         case .end: return "flag.checkered"
         case .trainStation: return "train.side.front.car"
         case .waypoint: return "mappin"
+        case .note: return "note.text"
         }
     }
 
@@ -31,6 +33,7 @@ enum TrackingPointType: Equatable {
         case .end: return .red
         case .trainStation: return .orange
         case .waypoint: return .blue
+        case .note: return .purple
         }
     }
 
@@ -42,7 +45,7 @@ enum TrackingPointType: Equatable {
         switch self {
         case .trainStation: return 24
         case .start, .end: return 20
-        case .waypoint: return 16
+        case .waypoint, .note: return 16
         }
     }
 
@@ -50,7 +53,23 @@ enum TrackingPointType: Equatable {
         switch self {
         case .trainStation: return 12
         case .start, .end: return 10
-        case .waypoint: return 8
+        case .waypoint, .note: return 8
+        }
+    }
+
+    var selectedMarkerSize: CGFloat {
+        switch self {
+        case .trainStation: return 36
+        case .start, .end: return 28
+        case .waypoint, .note: return 22
+        }
+    }
+
+    var selectedIconSize: CGFloat {
+        switch self {
+        case .trainStation: return 18
+        case .start, .end: return 14
+        case .waypoint, .note: return 11
         }
     }
 }
@@ -63,23 +82,26 @@ struct TrackingPoint: Identifiable, Equatable {
     let type: TrackingPointType
     let location: CLLocationCoordinate2D
     let timestamp: Date
+    var isSelected: Bool
 
     init(
         id: UUID = UUID(),
         title: String? = nil,
         type: TrackingPointType,
         location: CLLocationCoordinate2D,
-        timestamp: Date
+        timestamp: Date,
+        isSelected: Bool = false
     ) {
         self.id = id
         self.title = title
         self.type = type
         self.location = location
         self.timestamp = timestamp
+        self.isSelected = isSelected
     }
 
     static func == (lhs: TrackingPoint, rhs: TrackingPoint) -> Bool {
-        lhs.id == rhs.id
+        lhs.id == rhs.id && lhs.isSelected == rhs.isSelected
     }
 }
 
@@ -131,6 +153,17 @@ extension TrackingPoint {
             type: .end,
             location: point.coordinate,
             timestamp: point.timestamp
+        )
+    }
+
+    /// Create a TrackingPoint from a SessionNote
+    static func from(note: SessionNote) -> TrackingPoint {
+        TrackingPoint(
+            id: note.id,
+            title: note.previewText,
+            type: .note,
+            location: note.coordinate,
+            timestamp: note.timestamp
         )
     }
 }

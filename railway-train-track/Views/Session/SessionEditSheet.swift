@@ -44,6 +44,12 @@ struct SessionEditSheet: View {
                         dismiss()
                     }
                 }
+
+                ToolbarItem(placement: .bottomBar) {
+                    ResumeTrackingButton(session: session) {
+                        dismiss()
+                    }
+                }
             }
         }
     }

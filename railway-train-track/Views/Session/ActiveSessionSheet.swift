@@ -70,30 +70,6 @@ struct ActiveSessionSheet: View {
                     }
                 }
 
-                // Controls Section
-                Section {
-                    Button {
-                        if viewModel.isPaused {
-                            viewModel.resumeSession()
-                        } else {
-                            viewModel.pauseSession()
-                        }
-                    } label: {
-                        Label(
-                            viewModel.isPaused ? "Resume" : "Pause",
-                            systemImage: viewModel.isPaused ? "play.fill" : "pause.fill"
-                        )
-                    }
-
-                    Button(role: .destructive) {
-                        viewModel.stopSession()
-                        dismiss()
-                    } label: {
-                        Label("Stop", systemImage: "stop.fill")
-                            .foregroundStyle(.red)
-                    }
-                }
-
                 // Error Section
                 if let error = viewModel.errorMessage {
                     Section {
@@ -110,6 +86,9 @@ struct ActiveSessionSheet: View {
                     Button("Done") {
                         dismiss()
                     }
+                }
+                ToolbarItemGroup(placement: .bottomBar) {
+                    StopAndPauseTrackingButton()
                 }
             }
         }
