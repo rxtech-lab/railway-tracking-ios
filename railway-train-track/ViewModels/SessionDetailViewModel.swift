@@ -80,6 +80,26 @@ enum SheetContent: Identifiable {
     }
 }
 
+/// Sheet content specifically for toolbar actions on iPad/macOS
+/// These are presented as modal sheets instead of updating the detail column
+enum ToolbarSheetContent: Identifiable {
+    case playbackSettings
+    case exportCSV
+    case exportJSON
+    case exportVideo
+    case noteEditor(NoteEditorContext)
+
+    var id: String {
+        switch self {
+        case .playbackSettings: return "playbackSettings"
+        case .exportCSV: return "exportCSV"
+        case .exportJSON: return "exportJSON"
+        case .exportVideo: return "exportVideo"
+        case .noteEditor(let context): return "noteEditor-\(context.id)"
+        }
+    }
+}
+
 @Observable
 final class SessionDetailViewModel {
     // Session
@@ -147,6 +167,9 @@ final class SessionDetailViewModel {
 
     // Sheet state
     var sheetContent: SheetContent = .tabBar
+
+    // Toolbar sheet state (for iPad/macOS - presents as modal sheet instead of detail column)
+    var toolbarSheetContent: ToolbarSheetContent?
 
     // Station playback state
     var selectedStationIndex: Int = 0

@@ -15,18 +15,27 @@ import AppKit
 struct ExportMenuButton: View {
     @Bindable var viewModel: SessionDetailViewModel
     @Bindable var exportViewModel: ExportViewModel
+    var presentationMode: PresentationMode = .sheet
 
     var body: some View {
         Menu {
             Section("Data Export") {
                 Button {
-                    viewModel.sheetContent = .exportCSV
+                    if presentationMode == .sheet {
+                        viewModel.sheetContent = .exportCSV
+                    } else {
+                        viewModel.toolbarSheetContent = .exportCSV
+                    }
                 } label: {
                     Label("Export CSV", systemImage: "tablecells")
                 }
 
                 Button {
-                    viewModel.sheetContent = .exportJSON
+                    if presentationMode == .sheet {
+                        viewModel.sheetContent = .exportJSON
+                    } else {
+                        viewModel.toolbarSheetContent = .exportJSON
+                    }
                 } label: {
                     Label("Export JSON", systemImage: "curlybraces")
                 }
@@ -35,7 +44,11 @@ struct ExportMenuButton: View {
             if viewModel.selectedTab == .stations && viewModel.session.stationAnalysisCompleted {
                 Section("Video Export") {
                     Button {
-                        viewModel.sheetContent = .exportVideo
+                        if presentationMode == .sheet {
+                            viewModel.sheetContent = .exportVideo
+                        } else {
+                            viewModel.toolbarSheetContent = .exportVideo
+                        }
                     } label: {
                         Label("Export Video", systemImage: "film")
                     }

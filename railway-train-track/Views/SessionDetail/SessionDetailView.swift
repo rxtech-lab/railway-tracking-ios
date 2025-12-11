@@ -81,20 +81,38 @@ struct SessionDetailView: View {
     private var toolbarContent: some View {
         HStack(spacing: 16) {
             Button {
-                viewModel.addNoteAtCurrentPlaybackPosition()
+                if presentationMode == .sheet {
+                    viewModel.addNoteAtCurrentPlaybackPosition()
+                } else {
+                    // For column mode, open note editor in sheet
+                    if let coord = viewModel.interpolatedCoordinate ?? viewModel.sortedLocationPoints.first?.coordinate {
+                        let context = NoteEditorContext(
+                            coordinate: coord,
+                            linkedStationEvent: nil,
+                            linkedStation: nil,
+                            existingNote: nil
+                        )
+                        viewModel.toolbarSheetContent = .noteEditor(context)
+                    }
+                }
             } label: {
                 Image(systemName: "note.text.badge.plus")
             }
 
             Button {
-                viewModel.sheetContent = .playbackSettings
+                if presentationMode == .sheet {
+                    viewModel.sheetContent = .playbackSettings
+                } else {
+                    viewModel.toolbarSheetContent = .playbackSettings
+                }
             } label: {
                 Image(systemName: "slider.horizontal.3")
             }
 
             ExportMenuButton(
                 viewModel: viewModel,
-                exportViewModel: exportViewModel
+                exportViewModel: exportViewModel,
+                presentationMode: presentationMode
             )
         }
     }
@@ -116,6 +134,12 @@ struct SessionDetailView: View {
             viewModel: viewModel,
             exportViewModel: exportViewModel
         ))
+        .sheet(item: $viewModel.toolbarSheetContent) { content in
+            NavigationStack {
+                toolbarSheetView(for: content)
+            }
+            .interactiveDismissDisabled()
+        }
         .toolbar {
             #if os(iOS)
             ToolbarItem(placement: .topBarTrailing) {
@@ -148,6 +172,84 @@ struct SessionDetailView: View {
         .presentationDragIndicator(.visible)
         .presentationBackgroundInteraction(content.isTabBar ? .enabled : .disabled)
         .interactiveDismissDisabled()
+    }
+
+    @ViewBuilder
+    private func toolbarSheetView(for content: ToolbarSheetContent) -> some View {
+        switch content {
+        case .playbackSettings:
+            PlaybackSettingsContent(viewModel: viewModel)
+                .navigationTitle("Playback Settings")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            viewModel.toolbarSheetContent = nil
+                        }
+                    }
+                }
+        case .exportCSV:
+            CSVExportContent(
+                session: viewModel.session,
+                exportType: viewModel.selectedTab,
+                exportViewModel: exportViewModel
+            )
+            .navigationTitle("Export CSV")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        viewModel.toolbarSheetContent = nil
+                    }
+                }
+            }
+        case .exportJSON:
+            JSONExportContent(
+                session: viewModel.session,
+                exportType: viewModel.selectedTab,
+                exportViewModel: exportViewModel
+            )
+            .navigationTitle("Export JSON")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        viewModel.toolbarSheetContent = nil
+                    }
+                }
+            }
+        case .exportVideo:
+            VideoExportContent(
+                session: viewModel.session,
+                exportViewModel: exportViewModel
+            )
+            .navigationTitle("Export Video")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        viewModel.toolbarSheetContent = nil
+                    }
+                }
+            }
+        case .noteEditor(let context):
+            NoteEditorView(context: context, viewModel: viewModel)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            viewModel.toolbarSheetContent = nil
+                        }
+                    }
+                }
+        }
     }
 }
 
