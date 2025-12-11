@@ -87,14 +87,6 @@ struct CSVExportContent: View {
                 .disabled(exportViewModel.isExporting)
             }
 
-            if exportViewModel.isExporting {
-                Section {
-                    ProgressView(value: exportViewModel.exportProgress) {
-                        Text("Exporting...")
-                    }
-                }
-            }
-
             if let error = exportViewModel.errorMessage {
                 Section {
                     Text(error)
@@ -102,6 +94,12 @@ struct CSVExportContent: View {
                 }
             }
         }
+        .exportProgress(
+            isPresented: exportViewModel.showProgressModal,
+            exportType: exportViewModel.progressViewExportType,
+            progress: exportViewModel.exportProgress,
+            totalItems: exportViewModel.totalItemsToExport
+        )
         .sheet(isPresented: $exportViewModel.showShareSheet) {
             if let url = exportViewModel.exportedFileURL {
                 ShareSheet(items: [url])
@@ -158,14 +156,6 @@ struct JSONExportContent: View {
                 .disabled(exportViewModel.isExporting)
             }
 
-            if exportViewModel.isExporting {
-                Section {
-                    ProgressView(value: exportViewModel.exportProgress) {
-                        Text("Exporting...")
-                    }
-                }
-            }
-
             if let error = exportViewModel.errorMessage {
                 Section {
                     Text(error)
@@ -173,6 +163,12 @@ struct JSONExportContent: View {
                 }
             }
         }
+        .exportProgress(
+            isPresented: exportViewModel.showProgressModal,
+            exportType: exportViewModel.progressViewExportType,
+            progress: exportViewModel.exportProgress,
+            totalItems: exportViewModel.totalItemsToExport
+        )
         .sheet(isPresented: $exportViewModel.showShareSheet) {
             if let url = exportViewModel.exportedFileURL {
                 ShareSheet(items: [url])
@@ -240,19 +236,6 @@ struct VideoExportContent: View {
                 .disabled(exportViewModel.isExporting || session.locationPoints.isEmpty)
             }
 
-            if exportViewModel.isExporting {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ProgressView(value: exportViewModel.exportProgress) {
-                            Text("Rendering video...")
-                        }
-                        Text("This may take a few minutes for high resolution videos.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
             if let error = exportViewModel.errorMessage {
                 Section {
                     Text(error)
@@ -266,6 +249,12 @@ struct VideoExportContent: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .exportProgress(
+            isPresented: exportViewModel.showProgressModal,
+            exportType: exportViewModel.progressViewExportType,
+            progress: exportViewModel.exportProgress,
+            totalItems: exportViewModel.totalItemsToExport
+        )
         .sheet(isPresented: $exportViewModel.showShareSheet) {
             if let url = exportViewModel.exportedFileURL {
                 ShareSheet(items: [url])

@@ -50,6 +50,36 @@
             endingLineNumber = "782"
             landmarkName = "analyzeStations()"
             landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "A3639B58-6710-4DAF-BFB4-5253B43FF0CF - 3376473f35947cc9"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "railway_train_track.SessionDetailViewModel.seekToBeginningTimeBased() -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/SessionDetailViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "782"
+                  endingLineNumber = "782">
+               </Location>
+               <Location
+                  uuid = "A3639B58-6710-4DAF-BFB4-5253B43FF0CF - 74f7e43007b4154e"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "closure #1 @Sendable (__C.NSTimer) -&gt; () in railway_train_track.SessionDetailViewModel.startStationPlayback() -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/SessionDetailViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "782"
+                  endingLineNumber = "782">
+               </Location>
+            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy

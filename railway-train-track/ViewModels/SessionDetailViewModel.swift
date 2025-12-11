@@ -170,12 +170,18 @@ final class SessionDetailViewModel {
     // Services
     private let stationService: TrainStationService
     private let analysisService: StationAnalysisService
+    private let simplificationService = CoordinateSimplificationService()
     private var modelContext: ModelContext?
     private var playbackTimer: Timer?
     private var stationPlaybackTimer: Timer?
     private var timeBasedPlaybackTimer: Timer?
     private var displayLink: CADisplayLink?
     private var lastDisplayLinkTimestamp: CFTimeInterval = 0
+
+    // Coordinate simplification cache
+    // Key: epsilon value, Value: simplified coordinates
+    private var simplifiedCoordinatesCache: [Double: [CLLocationCoordinate2D]] = [:]
+    private var currentEpsilon: Double = 0.0001
 
     init(
         session: TrackingSession,
@@ -196,6 +202,50 @@ final class SessionDetailViewModel {
 
     var sortedLocationPoints: [LocationPoint] {
         session.sortedLocationPoints
+    }
+
+    // MARK: - Simplified Coordinates for Display
+
+    /// Simplified coordinates for map display (based on current zoom level)
+    /// Uses Douglas-Peucker algorithm to reduce point count while preserving shape
+    var displayCoordinates: [CLLocationCoordinate2D] {
+        getSimplifiedCoordinates(for: playbackCameraDistance)
+    }
+
+    /// Traveled coordinates for map display during playback
+    /// Note: In GPS mode, these are already simplified via displayCoordinates
+    var simplifiedTraveledCoordinates: [CLLocationCoordinate2D] {
+        traveledCoordinates
+    }
+
+    /// Get simplified coordinates from cache or compute them
+    private func getSimplifiedCoordinates(for cameraDistance: Double) -> [CLLocationCoordinate2D] {
+        let epsilon = CoordinateSimplificationService.SimplificationConfig.epsilon(for: cameraDistance)
+
+        // Return cached version if available
+        if let cached = simplifiedCoordinatesCache[epsilon] {
+            return cached
+        }
+
+        // Compute and cache
+        let fullCoordinates = session.coordinates
+        let simplified = simplificationService.simplify(coordinates: fullCoordinates, epsilon: epsilon)
+        simplifiedCoordinatesCache[epsilon] = simplified
+        return simplified
+    }
+
+    /// Invalidate the coordinate cache (call when session data changes)
+    func invalidateCoordinateCache() {
+        simplifiedCoordinatesCache.removeAll()
+    }
+
+    /// Handle camera distance changes to update epsilon if needed
+    func handleCameraDistanceChange(_ newDistance: Double) {
+        let newEpsilon = CoordinateSimplificationService.SimplificationConfig.epsilon(for: newDistance)
+        if newEpsilon != currentEpsilon {
+            currentEpsilon = newEpsilon
+            // Cache will be populated lazily on next displayCoordinates access
+        }
     }
 
     var sortedStationEvents: [StationPassEvent] {
@@ -290,19 +340,21 @@ final class SessionDetailViewModel {
         }
     }
 
-    /// GPS-based traveled coordinates (original implementation)
+    /// GPS-based traveled coordinates using simplified path
     private func calculateGPSTraveledCoordinates() -> [CLLocationCoordinate2D] {
-        let points = sortedLocationPoints
-        let targetTimestamp = calculateTargetTimestamp()
+        let simplified = displayCoordinates
+        guard simplified.count >= 2 else { return simplified }
 
-        // Collect all points up to the target time
+        // Calculate the index position based on playback progress
+        let progress = currentPlaybackProgress
+        let maxIndex = Double(simplified.count - 1)
+        let exactIndex = progress * maxIndex
+        let floorIndex = Int(exactIndex)
+
+        // Collect all simplified points up to and including floorIndex
         var coords: [CLLocationCoordinate2D] = []
-        for point in points {
-            if point.timestamp <= targetTimestamp {
-                coords.append(point.coordinate)
-            } else {
-                break
-            }
+        for i in 0...min(floorIndex, simplified.count - 1) {
+            coords.append(simplified[i])
         }
 
         // Append interpolated position if different from last point
@@ -520,48 +572,34 @@ final class SessionDetailViewModel {
         }
     }
 
-    /// GPS-based interpolation (original implementation)
+    /// GPS-based interpolation using simplified coordinates
     private func calculateGPSInterpolatedPosition() -> CLLocationCoordinate2D? {
-        let points = sortedLocationPoints
-        guard points.count >= 2,
-              let journeyStart = points.first?.timestamp,
-              journeyDuration > 0
-        else {
-            return points.first?.coordinate
+        let simplified = displayCoordinates
+        guard simplified.count >= 2 else {
+            return simplified.first
         }
 
-        let targetTimestamp = calculateTargetTimestamp()
+        // Use playback progress to determine position along simplified path
+        let progress = currentPlaybackProgress
+        let maxIndex = Double(simplified.count - 1)
+        let exactIndex = progress * maxIndex
 
-        // Find the two GPS points to interpolate between
-        var beforePoint: LocationPoint?
-        var afterPoint: LocationPoint?
-
-        for point in points {
-            if point.timestamp <= targetTimestamp {
-                beforePoint = point
-            }
-            if point.timestamp > targetTimestamp {
-                afterPoint = point
-                break
-            }
-        }
+        // Get the two points to interpolate between
+        let floorIndex = Int(exactIndex)
+        let ceilIndex = min(floorIndex + 1, simplified.count - 1)
 
         // Handle edge cases
-        guard let before = beforePoint else {
-            return points.first?.coordinate
-        }
-        guard let after = afterPoint else {
-            return points.last?.coordinate
+        if floorIndex >= simplified.count - 1 {
+            return simplified.last
         }
 
-        // Linear interpolation between the two points
-        let segmentDuration = after.timestamp.timeIntervalSince(before.timestamp)
-        guard segmentDuration > 0 else {
-            return before.coordinate
-        }
+        let before = simplified[floorIndex]
+        let after = simplified[ceilIndex]
 
-        let segmentProgress = targetTimestamp.timeIntervalSince(before.timestamp) / segmentDuration
+        // Calculate interpolation factor within the segment
+        let segmentProgress = exactIndex - Double(floorIndex)
 
+        // Linear interpolation between the two simplified points
         let interpolatedLat = before.latitude + (after.latitude - before.latitude) * segmentProgress
         let interpolatedLon = before.longitude + (after.longitude - before.longitude) * segmentProgress
 
@@ -642,22 +680,16 @@ final class SessionDetailViewModel {
             return
         }
 
-        // Update position and traveled path every frame
+        // Update position, traveled path, and camera every frame
         interpolatedCoordinate = calculateInterpolatedPosition()
-        let traveledCoordinates = calculateTraveledCoordinates()
+        traveledCoordinates = calculateTraveledCoordinates()
 
-        // Debug: print every 0.1 seconds
-        if Int(playbackElapsedTime * 10) != Int((playbackElapsedTime - deltaTime) * 10) {
-            // update camera
-            withAnimation(.linear(duration: 0.05)) {
-                self.traveledCoordinates = traveledCoordinates
-                if let coord = interpolatedCoordinate {
-                    mapCameraPosition = .camera(MapCamera(
-                        centerCoordinate: coord,
-                        distance: playbackCameraDistance
-                    ))
-                }
-            }
+        // Update camera to follow current position
+        if let coord = interpolatedCoordinate {
+            mapCameraPosition = .camera(MapCamera(
+                centerCoordinate: coord,
+                distance: playbackCameraDistance
+            ))
         }
     }
 

@@ -32,8 +32,8 @@ struct SessionDetailView: View {
             cameraPosition: $viewModel.mapCameraPosition,
             currentCoordinate: viewModel.interpolatedCoordinate,
             animationDuration: viewModel.playbackAnimationDuration,
-            routeCoordinates: viewModel.session.coordinates,
-            traveledCoordinates: viewModel.traveledCoordinates,
+            routeCoordinates: viewModel.displayCoordinates,
+            traveledCoordinates: viewModel.simplifiedTraveledCoordinates,
             markers: viewModel.staticMarkers,
             railwayRoutes: viewModel.showRailroad ? viewModel.stationDataViewModel.railwayRoutes : [],
             markerStyle: .currentPosition,
@@ -42,6 +42,7 @@ struct SessionDetailView: View {
             cameraDistance: viewModel.playbackCameraDistance,
             onCameraDistanceChanged: { newDistance in
                 viewModel.playbackCameraDistance = newDistance
+                viewModel.handleCameraDistanceChange(newDistance)
             },
             onLongPress: { coordinate in
                 viewModel.handleMapLongPress(coordinate)

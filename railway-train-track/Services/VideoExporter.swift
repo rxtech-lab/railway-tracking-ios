@@ -38,6 +38,10 @@ enum VideoResolution: String, CaseIterable, Identifiable {
 
 final class VideoExporter {
     private let frameRate: Int32 = 30
+    private let simplificationService = CoordinateSimplificationService()
+
+    /// Fixed epsilon for video rendering - provides consistent quality across all frames
+    private let videoSimplificationEpsilon: Double = 0.0001
 
     func export(
         session: TrackingSession,
@@ -181,20 +185,30 @@ final class VideoExporter {
         let snapshotter = MKMapSnapshotter(options: options)
         let snapshot = try await snapshotter.start()
 
+        // Simplify coordinates for efficient rendering
+        let fullRouteCoords = allPoints.map { $0.coordinate }
+        let simplifiedFullRoute = simplificationService.simplify(
+            coordinates: fullRouteCoords,
+            epsilon: videoSimplificationEpsilon
+        )
+
+        let traveledCoords = points.map { $0.coordinate }
+        let simplifiedTraveled = simplificationService.simplify(
+            coordinates: traveledCoords,
+            epsilon: videoSimplificationEpsilon
+        )
+
         // Draw route on snapshot
         let image = await MainActor.run {
             UIGraphicsImageRenderer(size: resolution).image { ctx in
                 // Draw base map
                 snapshot.image.draw(at: .zero)
 
-                let coordinates = points.map { $0.coordinate }
-
-                // Draw full route as faded line
-                if allPoints.count > 1 {
+                // Draw full route as faded line (simplified for performance)
+                if simplifiedFullRoute.count > 1 {
                     ctx.cgContext.setStrokeColor(UIColor.systemBlue.withAlphaComponent(0.3).cgColor)
                     ctx.cgContext.setLineWidth(2)
-                    let allCoords = allPoints.map { $0.coordinate }
-                    for (i, coord) in allCoords.enumerated() {
+                    for (i, coord) in simplifiedFullRoute.enumerated() {
                         let point = snapshot.point(for: coord)
                         if i == 0 {
                             ctx.cgContext.move(to: point)
@@ -205,11 +219,11 @@ final class VideoExporter {
                     ctx.cgContext.strokePath()
                 }
 
-                // Draw traveled route
-                if coordinates.count > 1 {
+                // Draw traveled route (simplified for performance)
+                if simplifiedTraveled.count > 1 {
                     ctx.cgContext.setStrokeColor(UIColor.systemBlue.cgColor)
                     ctx.cgContext.setLineWidth(4)
-                    for (i, coord) in coordinates.enumerated() {
+                    for (i, coord) in simplifiedTraveled.enumerated() {
                         let point = snapshot.point(for: coord)
                         if i == 0 {
                             ctx.cgContext.move(to: point)
@@ -234,8 +248,8 @@ final class VideoExporter {
                     }
                 }
 
-                // Draw current position marker
-                if let lastCoord = coordinates.last {
+                // Draw current position marker (use original coordinates for accuracy)
+                if let lastCoord = traveledCoords.last {
                     let currentPoint = snapshot.point(for: lastCoord)
 
                     // Outer circle
