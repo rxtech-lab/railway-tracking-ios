@@ -12,12 +12,14 @@ import UniformTypeIdentifiers
 struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TrackingViewModel.self) private var trackingViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \TrackingSession.startTime, order: .reverse)
     private var sessions: [TrackingSession]
 
-    @State private var navigationPath = NavigationPath()
+    @State private var selectedSession: TrackingSession?
     @State private var showNewSessionSheet = false
     @State private var selectedActiveSession: TrackingSession?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var showRecoveryAlert = false
     @State private var showDeleteConfirmation = false
     @State private var sessionToDelete: TrackingSession?
@@ -28,140 +30,215 @@ struct SessionListView: View {
     @State private var showImportSuccess = false
     @State private var importedSessionName = ""
 
+    // For iPad/Mac 3-column layout: shared viewModel across content and detail columns
+    @State private var detailViewModel: SessionDetailViewModel?
+    @State private var exportViewModel = ExportViewModel()
+
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            Group {
-                if sessions.isEmpty {
-                    ContentUnavailableView(
-                        "No Sessions",
-                        systemImage: "train.side.front.car",
-                        description: Text("Start tracking your train journey to see sessions here.")
-                    )
-                } else {
-                    List {
-                        ForEach(groupedSessions, id: \.key) { date, daySessions in
-                            Section(header: Text(date, style: .date)) {
-                                ForEach(daySessions) { session in
-                                    sessionRow(for: session)
-                                        .contextMenu {
-                                            ResumeTrackingButton(session: session) {
-                                                selectedActiveSession = session
-                                            }
+        Group {
+            if horizontalSizeClass == .regular {
+                threeColumnLayout
+            } else {
+                twoColumnLayout
+            }
+        }
+        .sheet(isPresented: $showNewSessionSheet) {
+            NewSessionSheet { createdSession in
+                selectedActiveSession = createdSession
+            }
+        }
+        .sheet(item: $selectedActiveSession) { session in
+            ActiveSessionSheet(session: session)
+        }
+        .sheet(item: $sessionToEdit) { session in
+            SessionEditSheet(session: session)
+        }
+        .onAppear {
+            if trackingViewModel.hasRecoverableSession {
+                showRecoveryAlert = true
+            }
+        }
+        .alert("Session Found", isPresented: $showRecoveryAlert) {
+            Button("Resume") {
+                trackingViewModel.resumeRecoveredSession()
+                selectedActiveSession = trackingViewModel.currentSession
+            }
+            Button("Discard", role: .cancel) {
+                trackingViewModel.discardRecoveredSession()
+            }
+        } message: {
+            Text("You have an active recording session that was interrupted. Would you like to resume it?")
+        }
+        .alert("Delete Session", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                confirmDelete()
+            }
+            Button("Cancel", role: .cancel) {
+                sessionToDelete = nil
+            }
+        } message: {
+            Text("Are you sure you want to delete this session? This cannot be undone.")
+        }
+        .fileImporter(
+            isPresented: $showImportPicker,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImportResult(result)
+        }
+        .alert("Import Successful", isPresented: $showImportSuccess) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Successfully imported session: \(importedSessionName)")
+        }
+        .alert("Import Failed", isPresented: $showImportError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importErrorMessage)
+        }
+        .onChange(of: selectedSession) { _, newSession in
+            // Update shared viewModel when session changes (for iPad 3-column)
+            if let session = newSession {
+                detailViewModel = SessionDetailViewModel(session: session)
+                exportViewModel.setDefaultFilename(from: session)
+            } else {
+                detailViewModel = nil
+            }
+        }
+    }
 
-                                            StopAndPauseTrackingButton(showPauseButton: false)
+    // MARK: - Three Column Layout (iPad/Mac)
 
-                                            Button {
-                                                sessionToEdit = session
-                                            } label: {
-                                                Label("Edit", systemImage: "pencil")
-                                            }
-                                            Button(role: .destructive) {
-                                                sessionToDelete = session
-                                                showDeleteConfirmation = true
-                                            } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
+    private var threeColumnLayout: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebarContent
+        } content: {
+            if let session = selectedSession, let vm = detailViewModel {
+                SessionDetailView(
+                    session: session,
+                    presentationMode: .column,
+                    externalViewModel: vm
+                )
+                .id(session.id)
+            } else {
+                ContentUnavailableView(
+                    "Select a Session",
+                    systemImage: "train.side.front.car",
+                    description: Text("Choose a session from the list to view its details.")
+                )
+            }
+        } detail: {
+            if let vm = detailViewModel {
+                DetailColumnView(
+                    viewModel: vm,
+                    exportViewModel: exportViewModel
+                )
+            } else {
+                ContentUnavailableView(
+                    "No Session Selected",
+                    systemImage: "sidebar.right",
+                    description: Text("Select a session to view locations, stations, and notes.")
+                )
+            }
+        }
+    }
+
+    // MARK: - Two Column Layout (iPhone)
+
+    private var twoColumnLayout: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            sidebarContent
+        } detail: {
+            if let session = selectedSession {
+                SessionDetailView(session: session, presentationMode: .sheet)
+                    .id(session.id)
+            } else {
+                ContentUnavailableView(
+                    "Select a Session",
+                    systemImage: "train.side.front.car",
+                    description: Text("Choose a session from the list to view its details.")
+                )
+            }
+        }
+    }
+
+    // MARK: - Sidebar Content
+
+    private var sidebarContent: some View {
+        Group {
+            if sessions.isEmpty {
+                ContentUnavailableView(
+                    "No Sessions",
+                    systemImage: "train.side.front.car",
+                    description: Text("Start tracking your train journey to see sessions here.")
+                )
+            } else {
+                List(selection: $selectedSession) {
+                    ForEach(groupedSessions, id: \.key) { date, daySessions in
+                        Section(header: Text(date, style: .date)) {
+                            ForEach(daySessions) { session in
+                                sessionRow(for: session)
+                                    .tag(session)
+                                    .contextMenu {
+                                        ResumeTrackingButton(session: session) {
+                                            selectedActiveSession = session
                                         }
-                                        .swipeActions(edge: .trailing) {
-                                            Button(role: .destructive) {
-                                                sessionToDelete = session
-                                                showDeleteConfirmation = true
-                                            } label: {
-                                                Label("Delete", systemImage: "trash")
-                                            }
+
+                                        StopAndPauseTrackingButton(showPauseButton: false)
+
+                                        Button {
+                                            sessionToEdit = session
+                                        } label: {
+                                            Label("Edit", systemImage: "pencil")
                                         }
-                                        .swipeActions(edge: .leading) {
-                                            Button {
-                                                sessionToEdit = session
-                                            } label: {
-                                                Label("Edit", systemImage: "pencil")
-                                            }
-                                            .tint(.orange)
+                                        Button(role: .destructive) {
+                                            sessionToDelete = session
+                                            showDeleteConfirmation = true
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
                                         }
-                                }
+                                    }
+                                    .swipeActions(edge: .trailing) {
+                                        Button(role: .destructive) {
+                                            sessionToDelete = session
+                                            showDeleteConfirmation = true
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
+                                    .swipeActions(edge: .leading) {
+                                        Button {
+                                            sessionToEdit = session
+                                        } label: {
+                                            Label("Edit", systemImage: "pencil")
+                                        }
+                                        .tint(.orange)
+                                    }
                             }
                         }
                     }
                 }
             }
-            .navigationDestination(for: TrackingSession.self) { session in
-                SessionDetailView(session: session)
-                    .toolbar(.hidden, for: .tabBar)
-            }
-            .navigationTitle("Sessions")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Button {
-                            showNewSessionSheet = true
-                        } label: {
-                            Label("New Session", systemImage: "plus")
-                        }
-                        .disabled(trackingViewModel.hasActiveSession)
-
-                        Button {
-                            showImportPicker = true
-                        } label: {
-                            Label("Import Session", systemImage: "square.and.arrow.down")
-                        }
+        }
+        .navigationTitle("Sessions")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Menu {
+                    Button {
+                        showNewSessionSheet = true
                     } label: {
-                        Image(systemName: "plus")
+                        Label("New Session", systemImage: "plus")
                     }
+                    .disabled(trackingViewModel.hasActiveSession)
+
+                    Button {
+                        showImportPicker = true
+                    } label: {
+                        Label("Import Session", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    Image(systemName: "plus")
                 }
-            }
-            .sheet(isPresented: $showNewSessionSheet) {
-                NewSessionSheet { createdSession in
-                    selectedActiveSession = createdSession
-                }
-            }
-            .sheet(item: $selectedActiveSession) { session in
-                ActiveSessionSheet(session: session)
-            }
-            .sheet(item: $sessionToEdit) { session in
-                SessionEditSheet(session: session)
-            }
-            .onAppear {
-                if trackingViewModel.hasRecoverableSession {
-                    showRecoveryAlert = true
-                }
-            }
-            .alert("Session Found", isPresented: $showRecoveryAlert) {
-                Button("Resume") {
-                    trackingViewModel.resumeRecoveredSession()
-                    selectedActiveSession = trackingViewModel.currentSession
-                }
-                Button("Discard", role: .cancel) {
-                    trackingViewModel.discardRecoveredSession()
-                }
-            } message: {
-                Text("You have an active recording session that was interrupted. Would you like to resume it?")
-            }
-            .alert("Delete Session", isPresented: $showDeleteConfirmation) {
-                Button("Delete", role: .destructive) {
-                    confirmDelete()
-                }
-                Button("Cancel", role: .cancel) {
-                    sessionToDelete = nil
-                }
-            } message: {
-                Text("Are you sure you want to delete this session? This cannot be undone.")
-            }
-            .fileImporter(
-                isPresented: $showImportPicker,
-                allowedContentTypes: [.json],
-                allowsMultipleSelection: false
-            ) { result in
-                handleImportResult(result)
-            }
-            .alert("Import Successful", isPresented: $showImportSuccess) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text("Successfully imported session: \(importedSessionName)")
-            }
-            .alert("Import Failed", isPresented: $showImportError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(importErrorMessage)
             }
         }
     }
@@ -183,9 +260,7 @@ struct SessionListView: View {
             }
             .foregroundStyle(.primary)
         } else {
-            NavigationLink(value: session) {
-                SessionRowView(session: session)
-            }
+            SessionRowView(session: session)
         }
     }
 
@@ -201,6 +276,9 @@ struct SessionListView: View {
     private func confirmDelete() {
         if let session = sessionToDelete {
             withAnimation {
+                if selectedSession?.id == session.id {
+                    selectedSession = nil
+                }
                 trackingViewModel.clearSessionIfDeleted(session)
                 modelContext.delete(session)
                 try? modelContext.save()
