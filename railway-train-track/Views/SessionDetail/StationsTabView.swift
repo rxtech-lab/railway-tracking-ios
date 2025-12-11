@@ -9,6 +9,9 @@ import SwiftUI
 
 struct StationsTabView: View {
     @Bindable var viewModel: SessionDetailViewModel
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -46,6 +49,7 @@ struct StationsTabView: View {
             .toolbar {
                 // Only show toolbar after analysis is completed with results
                 if viewModel.session.stationAnalysisCompleted && !viewModel.sortedStationEvents.isEmpty {
+                    #if os(iOS)
                     ToolbarItem(placement: .bottomBar) {
                         HStack(spacing: 12) {
                             // Load railway lines button
@@ -86,6 +90,37 @@ struct StationsTabView: View {
                             EditButton()
                         }
                     }
+                    #else
+                    ToolbarItem(placement: .automatic) {
+                        HStack(spacing: 12) {
+                            Button {
+                                Task {
+                                    await viewModel.fetchRailwayRoutes()
+                                }
+                            } label: {
+                                if viewModel.stationDataViewModel.isFetchingRailways {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "point.topleft.down.to.point.bottomright.curvepath")
+                                }
+                            }
+                            .disabled(viewModel.stationDataViewModel.isFetchingRailways)
+
+                            Button {
+                                viewModel.confirmRegenerateStations()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+
+                            Button {
+                                viewModel.sheetContent = .stationSearch
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                        }
+                    }
+                    #endif
                 }
             }
         }
@@ -155,8 +190,12 @@ struct StationsTabView: View {
 
     private var stationListView: some View {
         VStack(spacing: 0) {
-            // Playback controls
-            PlaybackControlsView(viewModel: viewModel)
+            // Playback controls (iPhone only)
+            #if os(iOS)
+            if horizontalSizeClass == .compact {
+                PlaybackControlsView(viewModel: viewModel)
+            }
+            #endif
 
             // Station list
             List {
@@ -255,7 +294,7 @@ struct StationRowView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(8)
-                .background(Color(.systemGray5))
+                .background(Color.gray.opacity(0.2))
                 .clipShape(Circle())
         }
         .padding(.vertical, 4)

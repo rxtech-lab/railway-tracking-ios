@@ -222,6 +222,7 @@ struct SessionListView: View {
         }
         .navigationTitle("Sessions")
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
                     Button {
@@ -240,6 +241,26 @@ struct SessionListView: View {
                     Image(systemName: "plus")
                 }
             }
+            #else
+            ToolbarItem(placement: .automatic) {
+                Menu {
+                    Button {
+                        showNewSessionSheet = true
+                    } label: {
+                        Label("New Session", systemImage: "plus")
+                    }
+                    .disabled(trackingViewModel.hasActiveSession)
+
+                    Button {
+                        showImportPicker = true
+                    } label: {
+                        Label("Import Session", systemImage: "square.and.arrow.down")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+            #endif
         }
     }
 

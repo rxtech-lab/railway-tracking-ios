@@ -102,7 +102,7 @@ struct TrackingView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .padding()
-                .background(Color(.systemGray6))
+                .background(Color.gray.opacity(0.15))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
@@ -161,7 +161,7 @@ struct TrackingView: View {
                 .padding(.horizontal)
             }
             .padding()
-            .background(Color(.systemGray6))
+            .background(Color.gray.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             Button {
@@ -215,7 +215,7 @@ struct TrackingView: View {
                 }
             }
             .padding()
-            .background(Color(.systemGray6))
+            .background(Color.gray.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             // Map preview
@@ -326,7 +326,9 @@ struct TrackingView: View {
                 }
             }
             .navigationTitle("New Session")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

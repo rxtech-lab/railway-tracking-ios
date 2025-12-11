@@ -10,11 +10,18 @@ import SwiftUI
 
 struct LocationsTabView: View {
     @Bindable var viewModel: SessionDetailViewModel
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     var body: some View {
         VStack(spacing: 0) {
-            // Playback controls
-            PlaybackControlsView(viewModel: viewModel)
+            // Playback controls (iPhone only)
+            #if os(iOS)
+            if horizontalSizeClass == .compact {
+                PlaybackControlsView(viewModel: viewModel)
+            }
+            #endif
 
             // Location list
             if viewModel.sortedLocationPoints.isEmpty {

@@ -6,6 +6,11 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 struct ExportMenuButton: View {
     @Bindable var viewModel: SessionDetailViewModel
@@ -265,6 +270,7 @@ struct VideoExportContent: View {
 
 // MARK: - Share Sheet
 
+#if os(iOS)
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
@@ -274,6 +280,44 @@ struct ShareSheet: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+#elseif os(macOS)
+struct ShareSheet: View {
+    let items: [Any]
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Export Complete")
+                .font(.headline)
+
+            if let url = items.first as? URL {
+                Text("File saved to:")
+                    .font(.subheadline)
+                Text(url.lastPathComponent)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Share...") {
+                        let picker = NSSharingServicePicker(items: items)
+                        if let window = NSApp.keyWindow,
+                           let contentView = window.contentView {
+                            picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 300, minHeight: 150)
+    }
+}
+#endif
 
 #Preview {
     ExportMenuButton(

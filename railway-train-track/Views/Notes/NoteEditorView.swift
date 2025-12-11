@@ -62,13 +62,15 @@ struct NoteEditorView: View {
                     TextEditor(text: $editorViewModel.plainText)
                         .frame(minHeight: 150)
                         .padding(8)
-                        .background(Color(.systemGray6))
+                        .background(Color.gray.opacity(0.15))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
             .formStyle(.grouped)
             .navigationTitle(context.isEditing ? "Edit Note" : "New Note")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

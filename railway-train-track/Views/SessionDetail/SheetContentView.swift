@@ -23,7 +23,9 @@ struct SheetContentView: View {
             NavigationStack {
                 PlaybackSettingsContent(viewModel: viewModel)
                     .navigationTitle("Playback Settings")
+                    #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") {
@@ -40,7 +42,9 @@ struct SheetContentView: View {
                     stationDataViewModel: viewModel.stationDataViewModel
                 )
                 .navigationTitle("Add Station")
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") {
@@ -58,7 +62,9 @@ struct SheetContentView: View {
                     exportViewModel: exportViewModel
                 )
                 .navigationTitle("Export CSV")
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") {
@@ -76,7 +82,9 @@ struct SheetContentView: View {
                     exportViewModel: exportViewModel
                 )
                 .navigationTitle("Export JSON")
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") {
@@ -93,7 +101,9 @@ struct SheetContentView: View {
                     exportViewModel: exportViewModel
                 )
                 .navigationTitle("Export Video")
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") {

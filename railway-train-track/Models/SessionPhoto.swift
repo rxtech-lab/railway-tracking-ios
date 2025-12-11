@@ -78,9 +78,10 @@ final class SessionPhoto {
         #if canImport(UIKit)
         return image.jpegData(compressionQuality: compressionQuality)
         #elseif canImport(AppKit)
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        var rect = NSRect(origin: .zero, size: image.size)
+        guard let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
         let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
-        return bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: compressionQuality])
+        return bitmapRep.representation(using: NSBitmapImageRep.FileType.jpeg, properties: [NSBitmapImageRep.PropertyKey.compressionFactor: compressionQuality])
         #endif
     }
 
@@ -105,7 +106,7 @@ final class SessionPhoto {
         newImage.lockFocus()
         image.draw(in: NSRect(origin: .zero, size: newSize),
                    from: NSRect(origin: .zero, size: image.size),
-                   operation: .copy,
+                   operation: NSCompositingOperation.copy,
                    fraction: 1.0)
         newImage.unlockFocus()
         return getJpegData(from: newImage, compressionQuality: 0.5)

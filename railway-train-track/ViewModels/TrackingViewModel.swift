@@ -68,8 +68,12 @@ final class TrackingViewModel {
     }
 
     var canTrack: Bool {
-        locationAuthorizationStatus == .authorizedAlways ||
+        #if os(iOS)
+        return locationAuthorizationStatus == .authorizedAlways ||
             locationAuthorizationStatus == .authorizedWhenInUse
+        #else
+        return locationAuthorizationStatus == .authorizedAlways
+        #endif
     }
 
     var hasActiveSession: Bool {
@@ -84,8 +88,10 @@ final class TrackingViewModel {
             return "Location access is restricted"
         case .denied:
             return "Location access denied. Please enable in Settings."
+        #if os(iOS)
         case .authorizedWhenInUse:
             return "For background tracking, please allow 'Always' access"
+        #endif
         case .authorizedAlways:
             return "Ready to track"
         @unknown default:

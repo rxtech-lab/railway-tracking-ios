@@ -7,7 +7,9 @@
 
 import SwiftUI
 import CoreLocation
+#if os(iOS)
 import UIKit
+#endif
 
 struct SettingsView: View {
     @Environment(TrackingViewModel.self) private var viewModel
@@ -49,12 +51,15 @@ struct SettingsView: View {
                         }
                     }
 
+                    #if os(iOS)
                     if viewModel.locationAuthorizationStatus == .authorizedWhenInUse {
                         Text("For background tracking during your journey, please allow 'Always' location access in Settings.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
+                    #endif
 
+                    #if os(iOS)
                     if viewModel.locationAuthorizationStatus != .authorizedAlways {
                         Button {
                             if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -64,6 +69,7 @@ struct SettingsView: View {
                             Label("Open Settings", systemImage: "gear")
                         }
                     }
+                    #endif
                 }
 
                 Section("About") {

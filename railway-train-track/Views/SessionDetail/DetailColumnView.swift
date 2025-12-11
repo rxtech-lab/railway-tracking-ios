@@ -20,14 +20,18 @@ struct DetailColumnView: View {
                 // Main tab interface - wrap in NavigationStack for toolbar support
                 NavigationStack {
                     SessionSheetContent(viewModel: viewModel, exportViewModel: exportViewModel)
+                        #if os(iOS)
                         .navigationBarTitleDisplayMode(.inline)
+                        #endif
                 }
 
             case .playbackSettings:
                 NavigationStack {
                     PlaybackSettingsContent(viewModel: viewModel)
                         .navigationTitle("Playback Settings")
+                        #if os(iOS)
                         .navigationBarTitleDisplayMode(.inline)
+                        #endif
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Done") {
@@ -44,7 +48,9 @@ struct DetailColumnView: View {
                         stationDataViewModel: viewModel.stationDataViewModel
                     )
                     .navigationTitle("Add Station")
+                    #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Back") {
@@ -62,7 +68,9 @@ struct DetailColumnView: View {
                         exportViewModel: exportViewModel
                     )
                     .navigationTitle("Export CSV")
+                    #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Back") {
@@ -80,7 +88,9 @@ struct DetailColumnView: View {
                         exportViewModel: exportViewModel
                     )
                     .navigationTitle("Export JSON")
+                    #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Back") {
@@ -97,7 +107,9 @@ struct DetailColumnView: View {
                         exportViewModel: exportViewModel
                     )
                     .navigationTitle("Export Video")
+                    #if os(iOS)
                     .navigationBarTitleDisplayMode(.inline)
+                    #endif
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Back") {

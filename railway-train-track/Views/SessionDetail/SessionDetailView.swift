@@ -117,12 +117,20 @@ struct SessionDetailView: View {
             exportViewModel: exportViewModel
         ))
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .topBarTrailing) {
                 toolbarContent
             }
+            #else
+            ToolbarItem(placement: .automatic) {
+                toolbarContent
+            }
+            #endif
         }
         .navigationTitle(viewModel.session.name)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .onAppear {
             viewModel.setModelContext(modelContext)
             exportViewModel.setDefaultFilename(from: viewModel.session)

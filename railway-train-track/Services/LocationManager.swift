@@ -10,7 +10,9 @@ import CoreLocation
 
 final class LocationManager: NSObject {
     private let manager = CLLocationManager()
+    #if os(iOS)
     private var backgroundSession: CLBackgroundActivitySession?
+    #endif
     private var updateTask: Task<Void, Never>?
     private var recordingInterval: Double = 1.0
     private var isPaused: Bool = false
@@ -24,9 +26,11 @@ final class LocationManager: NSObject {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        #if os(iOS)
         manager.allowsBackgroundLocationUpdates = true
         manager.pausesLocationUpdatesAutomatically = false
         manager.showsBackgroundLocationIndicator = true
+        #endif
     }
 
     var authorizationStatus: CLAuthorizationStatus {
@@ -34,19 +38,27 @@ final class LocationManager: NSObject {
     }
 
     func requestAuthorization() {
+        #if os(iOS)
         if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
         } else if manager.authorizationStatus == .authorizedWhenInUse {
             manager.requestAlwaysAuthorization()
         }
+        #elseif os(macOS)
+        if manager.authorizationStatus == .notDetermined {
+            manager.requestAlwaysAuthorization()
+        }
+        #endif
     }
 
     func startTracking(interval: Double) {
         recordingInterval = interval
         isPaused = false
 
+        #if os(iOS)
         // Start background session for background updates
         backgroundSession = CLBackgroundActivitySession()
+        #endif
 
         // Use new async location updates API
         startLocationUpdates()
@@ -63,8 +75,10 @@ final class LocationManager: NSObject {
     func stopTracking() {
         updateTask?.cancel()
         updateTask = nil
+        #if os(iOS)
         backgroundSession?.invalidate()
         backgroundSession = nil
+        #endif
         isPaused = false
     }
 

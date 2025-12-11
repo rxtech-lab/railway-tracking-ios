@@ -102,7 +102,9 @@ struct NoteDetailView: View {
                     }
                 }
                 .navigationTitle("Note")
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") {
@@ -123,7 +125,7 @@ struct NoteDetailView: View {
 // MARK: - Photo Cell
 
 private struct PhotoCell: View {
-    let image: UIImage
+    let image: PlatformImage
     @State private var showFullScreen = false
 
     var body: some View {
@@ -131,7 +133,7 @@ private struct PhotoCell: View {
             .frame(maxWidth: .infinity)
             .frame(height: 150)
             .overlay {
-                Image(uiImage: image)
+                Image(platformImage: image)
                     .resizable()
                     .scaledToFill()
             }
@@ -140,9 +142,15 @@ private struct PhotoCell: View {
             .onTapGesture {
                 showFullScreen = true
             }
+            #if os(iOS)
             .fullScreenCover(isPresented: $showFullScreen) {
                 FullScreenPhotoView(image: image)
             }
+            #else
+            .sheet(isPresented: $showFullScreen) {
+                FullScreenPhotoView(image: image)
+            }
+            #endif
     }
 }
 

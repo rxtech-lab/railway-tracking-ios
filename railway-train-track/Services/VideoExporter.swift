@@ -8,7 +8,11 @@
 import Foundation
 import AVFoundation
 import MapKit
+#if os(iOS)
 import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 enum VideoResolution: String, CaseIterable, Identifiable {
     case uhd4K = "4K 16:9 (3840x2160)"
@@ -199,6 +203,7 @@ final class VideoExporter {
         )
 
         // Draw route on snapshot
+        #if os(iOS)
         let image = await MainActor.run {
             UIGraphicsImageRenderer(size: resolution).image { ctx in
                 // Draw base map
@@ -285,10 +290,112 @@ final class VideoExporter {
                 }
             }
         }
+        #elseif os(macOS)
+        let image = await MainActor.run {
+            let nsImage = NSImage(size: resolution)
+            nsImage.lockFocus()
+
+            // Draw base map
+            snapshot.image.draw(at: .zero, from: NSRect(origin: .zero, size: resolution), operation: .copy, fraction: 1.0)
+
+            guard let ctx = NSGraphicsContext.current?.cgContext else {
+                nsImage.unlockFocus()
+                return nsImage
+            }
+
+            // Draw full route as faded line (simplified for performance)
+            if simplifiedFullRoute.count > 1 {
+                ctx.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.3).cgColor)
+                ctx.setLineWidth(2)
+                for (i, coord) in simplifiedFullRoute.enumerated() {
+                    let point = snapshot.point(for: coord)
+                    let flippedPoint = CGPoint(x: point.x, y: resolution.height - point.y)
+                    if i == 0 {
+                        ctx.move(to: flippedPoint)
+                    } else {
+                        ctx.addLine(to: flippedPoint)
+                    }
+                }
+                ctx.strokePath()
+            }
+
+            // Draw traveled route (simplified for performance)
+            if simplifiedTraveled.count > 1 {
+                ctx.setStrokeColor(NSColor.systemBlue.cgColor)
+                ctx.setLineWidth(4)
+                for (i, coord) in simplifiedTraveled.enumerated() {
+                    let point = snapshot.point(for: coord)
+                    let flippedPoint = CGPoint(x: point.x, y: resolution.height - point.y)
+                    if i == 0 {
+                        ctx.move(to: flippedPoint)
+                    } else {
+                        ctx.addLine(to: flippedPoint)
+                    }
+                }
+                ctx.strokePath()
+            }
+
+            // Draw station markers
+            for event in stations {
+                if let station = event.station {
+                    let stationPoint = snapshot.point(for: station.coordinate)
+                    let flippedPoint = CGPoint(x: stationPoint.x, y: resolution.height - stationPoint.y)
+                    ctx.setFillColor(NSColor.orange.cgColor)
+                    ctx.fillEllipse(in: CGRect(
+                        x: flippedPoint.x - 10,
+                        y: flippedPoint.y - 10,
+                        width: 20,
+                        height: 20
+                    ))
+                }
+            }
+
+            // Draw current position marker (use original coordinates for accuracy)
+            if let lastCoord = traveledCoords.last {
+                let currentPoint = snapshot.point(for: lastCoord)
+                let flippedPoint = CGPoint(x: currentPoint.x, y: resolution.height - currentPoint.y)
+
+                // Outer circle
+                ctx.setFillColor(NSColor.white.cgColor)
+                ctx.fillEllipse(in: CGRect(
+                    x: flippedPoint.x - 12,
+                    y: flippedPoint.y - 12,
+                    width: 24,
+                    height: 24
+                ))
+
+                // Inner circle
+                ctx.setFillColor(NSColor.systemRed.cgColor)
+                ctx.fillEllipse(in: CGRect(
+                    x: flippedPoint.x - 8,
+                    y: flippedPoint.y - 8,
+                    width: 16,
+                    height: 16
+                ))
+            }
+
+            // Draw timestamp overlay
+            if currentIndex < allPoints.count {
+                let timeText = allPoints[currentIndex].timestamp.formatted(date: .abbreviated, time: .standard)
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 24, weight: .bold),
+                    .foregroundColor: NSColor.white,
+                    .backgroundColor: NSColor.black.withAlphaComponent(0.7)
+                ]
+                let textSize = (timeText as NSString).size(withAttributes: attributes)
+                let textRect = CGRect(x: 20, y: 20, width: textSize.width + 10, height: textSize.height)
+                (timeText as NSString).draw(in: textRect, withAttributes: attributes)
+            }
+
+            nsImage.unlockFocus()
+            return nsImage
+        }
+        #endif
 
         return pixelBuffer(from: image, size: resolution)
     }
 
+    #if os(iOS)
     private func pixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
         let attrs: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,
@@ -334,4 +441,51 @@ final class VideoExporter {
 
         return buffer
     }
+    #elseif os(macOS)
+    private func pixelBuffer(from image: NSImage, size: CGSize) -> CVPixelBuffer? {
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferCGImageCompatibilityKey: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey: true
+        ]
+
+        var pixelBuffer: CVPixelBuffer?
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            Int(size.width),
+            Int(size.height),
+            kCVPixelFormatType_32ARGB,
+            attrs as CFDictionary,
+            &pixelBuffer
+        )
+
+        guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
+            return nil
+        }
+
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+
+        guard let context = CGContext(
+            data: CVPixelBufferGetBaseAddress(buffer),
+            width: Int(size.width),
+            height: Int(size.height),
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+        ) else {
+            return nil
+        }
+
+        // Flip context for correct orientation
+        context.translateBy(x: 0, y: size.height)
+        context.scaleBy(x: 1.0, y: -1.0)
+
+        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            context.draw(cgImage, in: CGRect(origin: .zero, size: size))
+        }
+
+        return buffer
+    }
+    #endif
 }

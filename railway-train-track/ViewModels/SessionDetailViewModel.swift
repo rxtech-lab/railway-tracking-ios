@@ -8,7 +8,9 @@
 import CoreLocation
 import Foundation
 import MapKit
+#if os(iOS)
 import QuartzCore
+#endif
 import SwiftData
 import SwiftUI
 
@@ -178,7 +180,11 @@ final class SessionDetailViewModel {
     private var playbackTimer: Timer?
     private var stationPlaybackTimer: Timer?
     private var timeBasedPlaybackTimer: Timer?
+    #if os(iOS)
     private var displayLink: CADisplayLink?
+    #else
+    private var displayLinkTimer: Timer?
+    #endif
     private var lastDisplayLinkTimestamp: CFTimeInterval = 0
     // Timestamp of last line update
     private var lastTraveledCoordinatesUpdate: CFTimeInterval = 0
@@ -647,13 +653,25 @@ final class SessionDetailViewModel {
 
         // Use DisplayLink for smooth 60fps animation
         lastDisplayLinkTimestamp = 0
+        #if os(iOS)
         displayLink = CADisplayLink(target: self, selector: #selector(displayLinkUpdate))
         displayLink?.add(to: .main, forMode: .common)
+        #else
+        // Use Timer on macOS at ~60fps
+        displayLinkTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.macOSDisplayLinkUpdate()
+        }
+        #endif
     }
 
     private func stopDisplayLink() {
+        #if os(iOS)
         displayLink?.invalidate()
         displayLink = nil
+        #else
+        displayLinkTimer?.invalidate()
+        displayLinkTimer = nil
+        #endif
         lastDisplayLinkTimestamp = 0
     }
 
@@ -1045,13 +1063,18 @@ final class SessionDetailViewModel {
         playbackTimer?.invalidate()
         stationPlaybackTimer?.invalidate()
         timeBasedPlaybackTimer?.invalidate()
+        #if os(iOS)
         displayLink?.invalidate()
+        #else
+        displayLinkTimer?.invalidate()
+        #endif
     }
 }
 
 // MARK: Display link animation
 
 extension SessionDetailViewModel {
+    #if os(iOS)
     @objc private func displayLinkUpdate(_ link: CADisplayLink) {
         guard isPlayingAnimation else {
             stopDisplayLink()
@@ -1096,4 +1119,52 @@ extension SessionDetailViewModel {
             lastCameraUpdate = link.timestamp
         }
     }
+    #else
+    private func macOSDisplayLinkUpdate() {
+        guard isPlayingAnimation else {
+            stopDisplayLink()
+            return
+        }
+
+        let currentTime = CACurrentMediaTime()
+
+        // Calculate delta time
+        let deltaTime: Double
+        if lastDisplayLinkTimestamp == 0 {
+            deltaTime = 1.0 / 60.0 // ~16ms for first frame
+        } else {
+            deltaTime = currentTime - lastDisplayLinkTimestamp
+        }
+        lastDisplayLinkTimestamp = currentTime
+
+        // Advance elapsed time
+        playbackElapsedTime += deltaTime
+
+        // Check completion
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = playbackDurationSeconds
+            interpolatedCoordinate = calculateInterpolatedPosition()
+            traveledCoordinates = calculateTraveledCoordinates()
+            cameraTrigger += 1 // Trigger final camera animation
+            pauseTimeBasedPlayback()
+            showPlaybackMarker = false
+            return
+        }
+
+        // Update position every frame for smooth marker movement
+        interpolatedCoordinate = calculateInterpolatedPosition()
+
+        // Update traveled path and trigger camera animation periodically
+        if currentTime - lastTraveledCoordinatesUpdate > 0.2 {
+            traveledCoordinates = calculateTraveledCoordinates()
+            lastTraveledCoordinatesUpdate = currentTime
+        }
+
+        // give some time for the animation to complete before triggering another
+        if currentTime - lastCameraUpdate > cameraAnimationDuration + 0.1 {
+            cameraTrigger += 1
+            lastCameraUpdate = currentTime
+        }
+    }
+    #endif
 }
