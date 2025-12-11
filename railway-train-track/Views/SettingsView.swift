@@ -35,6 +35,24 @@ struct SettingsView: View {
                     Text("Shorter intervals capture more detail but use more storage and battery.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("GPS Accuracy Threshold")
+                            Spacer()
+                            Text("\(viewModel.accuracyThreshold, specifier: "%.0f") meters")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Slider(value: Binding(
+                            get: { viewModel.accuracyThreshold },
+                            set: { viewModel.updateAccuracyThreshold($0) }
+                        ), in: 10...100, step: 10)
+                    }
+
+                    Text("Locations with accuracy worse than this threshold will be filtered out. Lower values are more strict.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Location Permission") {

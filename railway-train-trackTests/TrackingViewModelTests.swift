@@ -6,8 +6,40 @@
 //
 
 @testable import railway_train_track
+import CoreLocation
 import SwiftData
 import Testing
+
+// MARK: - Mock LocationManager for Testing
+
+final class MockLocationManager: LocationManager {
+    var lastUpdatedAccuracyThreshold: Double?
+    var lastUpdatedInterval: Double?
+    var lastUpdatedDistanceFilter: Double?
+    var startTrackingCalled = false
+    var stopTrackingCalled = false
+
+    override func updateAccuracyThreshold(_ threshold: Double) {
+        lastUpdatedAccuracyThreshold = threshold
+    }
+
+    override func updateInterval(_ interval: Double) {
+        lastUpdatedInterval = interval
+    }
+
+    override func updateDistanceFilter(_ distance: Double) {
+        lastUpdatedDistanceFilter = distance
+    }
+
+    override func startTracking(interval: Double) {
+        startTrackingCalled = true
+        lastUpdatedInterval = interval
+    }
+
+    override func stopTracking() {
+        stopTrackingCalled = true
+    }
+}
 
 @MainActor
 struct TrackingViewModelTests {
@@ -194,5 +226,74 @@ struct TrackingViewModelTests {
         // Assert
         #expect(viewModel.hasRecoverableSession == false)
         #expect(viewModel.recoverableSession == nil)
+    }
+
+    // MARK: - Accuracy Threshold Tests
+
+    @Test func updateAccuracyThreshold_setsThreshold() async throws {
+        let mockLocationManager = MockLocationManager()
+        let viewModel = TrackingViewModel(locationManager: mockLocationManager)
+
+        // Act
+        viewModel.updateAccuracyThreshold(30.0)
+
+        // Assert
+        #expect(viewModel.accuracyThreshold == 30.0)
+    }
+
+    @Test func updateAccuracyThreshold_clampsMinimum() async throws {
+        let mockLocationManager = MockLocationManager()
+        let viewModel = TrackingViewModel(locationManager: mockLocationManager)
+
+        // Act: try to set below minimum
+        viewModel.updateAccuracyThreshold(0.5)
+
+        // Assert: clamped to minimum
+        #expect(viewModel.accuracyThreshold == 1.0)
+    }
+
+    @Test func updateAccuracyThreshold_clampsMaximum() async throws {
+        let mockLocationManager = MockLocationManager()
+        let viewModel = TrackingViewModel(locationManager: mockLocationManager)
+
+        // Act: try to set above maximum
+        viewModel.updateAccuracyThreshold(250.0)
+
+        // Assert: clamped to maximum
+        #expect(viewModel.accuracyThreshold == 200.0)
+    }
+
+    @Test func updateAccuracyThreshold_updatesLocationManagerWhenTracking() async throws {
+        let mockLocationManager = MockLocationManager()
+        let viewModel = TrackingViewModel(locationManager: mockLocationManager)
+
+        // Setup: simulate tracking
+        viewModel.recoverableSession = TrackingSession(name: "Test")
+        viewModel.hasRecoverableSession = true
+        viewModel.resumeRecoveredSession()
+
+        // Act
+        viewModel.updateAccuracyThreshold(40.0)
+
+        // Assert
+        #expect(mockLocationManager.lastUpdatedAccuracyThreshold == 40.0)
+    }
+
+    @Test func updateAccuracyThreshold_doesNotUpdateLocationManagerWhenNotTracking() async throws {
+        let mockLocationManager = MockLocationManager()
+        let viewModel = TrackingViewModel(locationManager: mockLocationManager)
+
+        // Act: update threshold while not tracking
+        viewModel.updateAccuracyThreshold(40.0)
+
+        // Assert: location manager not updated
+        #expect(mockLocationManager.lastUpdatedAccuracyThreshold == nil)
+    }
+
+    @Test func defaultAccuracyThreshold_is50Meters() async throws {
+        let viewModel = TrackingViewModel()
+
+        // Assert
+        #expect(viewModel.accuracyThreshold == 50.0)
     }
 }

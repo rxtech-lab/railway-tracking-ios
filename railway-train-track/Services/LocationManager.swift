@@ -16,6 +16,7 @@ final class LocationManager: NSObject {
     private var updateTask: Task<Void, Never>?
     private var recordingInterval: Double = 1.0
     private var isPaused: Bool = false
+    private var accuracyThreshold: Double = 50.0 // meters - filter out locations with accuracy worse than this
 
     // Callbacks
     var onLocationUpdate: ((CLLocation) -> Void)?
@@ -26,6 +27,7 @@ final class LocationManager: NSObject {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 5.0 // meters - only report location changes >= 5m
         #if os(iOS)
         manager.allowsBackgroundLocationUpdates = true
         manager.pausesLocationUpdatesAutomatically = false
@@ -86,6 +88,14 @@ final class LocationManager: NSObject {
         recordingInterval = max(0.1, min(60.0, interval))
     }
 
+    func updateAccuracyThreshold(_ threshold: Double) {
+        accuracyThreshold = max(1.0, min(200.0, threshold))
+    }
+
+    func updateDistanceFilter(_ distance: Double) {
+        manager.distanceFilter = max(0, min(100.0, distance))
+    }
+
     private func startLocationUpdates() {
         updateTask = Task { [weak self] in
             guard let self = self else { return }
@@ -101,6 +111,12 @@ final class LocationManager: NSObject {
                     if self.isPaused { continue }
 
                     guard let location = update.location else { continue }
+
+                    // Filter out inaccurate locations
+                    // horizontalAccuracy < 0 means invalid, > threshold means too inaccurate
+                    if location.horizontalAccuracy < 0 || location.horizontalAccuracy > self.accuracyThreshold {
+                        continue
+                    }
 
                     // Throttle based on recording interval
                     let now = Date()
