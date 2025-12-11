@@ -7,6 +7,7 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SessionListView: View {
     @Environment(\.modelContext) private var modelContext
@@ -21,6 +22,11 @@ struct SessionListView: View {
     @State private var showDeleteConfirmation = false
     @State private var sessionToDelete: TrackingSession?
     @State private var sessionToEdit: TrackingSession?
+    @State private var showImportPicker = false
+    @State private var showImportError = false
+    @State private var importErrorMessage = ""
+    @State private var showImportSuccess = false
+    @State private var importedSessionName = ""
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -44,6 +50,11 @@ struct SessionListView: View {
 
                                             StopAndPauseTrackingButton(showPauseButton: false)
 
+                                            Button {
+                                                sessionToEdit = session
+                                            } label: {
+                                                Label("Edit", systemImage: "pencil")
+                                            }
                                             Button(role: .destructive) {
                                                 sessionToDelete = session
                                                 showDeleteConfirmation = true
@@ -80,12 +91,21 @@ struct SessionListView: View {
             .navigationTitle("Sessions")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if !trackingViewModel.hasActiveSession {
+                    Menu {
                         Button {
                             showNewSessionSheet = true
                         } label: {
-                            Image(systemName: "plus")
+                            Label("New Session", systemImage: "plus")
                         }
+                        .disabled(trackingViewModel.hasActiveSession)
+
+                        Button {
+                            showImportPicker = true
+                        } label: {
+                            Label("Import Session", systemImage: "square.and.arrow.down")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
                     }
                 }
             }
@@ -125,6 +145,23 @@ struct SessionListView: View {
                 }
             } message: {
                 Text("Are you sure you want to delete this session? This cannot be undone.")
+            }
+            .fileImporter(
+                isPresented: $showImportPicker,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImportResult(result)
+            }
+            .alert("Import Successful", isPresented: $showImportSuccess) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Successfully imported session: \(importedSessionName)")
+            }
+            .alert("Import Failed", isPresented: $showImportError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(importErrorMessage)
             }
         }
     }
@@ -169,6 +206,66 @@ struct SessionListView: View {
                 try? modelContext.save()
             }
             sessionToDelete = nil
+        }
+    }
+
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+
+            guard url.startAccessingSecurityScopedResource() else {
+                importErrorMessage = "Unable to access the selected file."
+                showImportError = true
+                return
+            }
+
+            defer { url.stopAccessingSecurityScopedResource() }
+
+            do {
+                let importer = JSONImporter()
+                let importedData = try importer.importSession(from: url)
+
+                let session = TrackingSession(
+                    name: "Imported: \(importedData.name)",
+                    recordingInterval: 1.0
+                )
+                session.startTime = importedData.startTime
+                session.endTime = importedData.endTime
+                session.isActive = false
+                session.totalDistance = importedData.totalDistance
+                session.averageSpeed = importedData.averageSpeed
+
+                modelContext.insert(session)
+
+                for pointData in importedData.locationPoints {
+                    let point = LocationPoint(
+                        timestamp: pointData.timestamp,
+                        latitude: pointData.latitude,
+                        longitude: pointData.longitude,
+                        altitude: pointData.altitude,
+                        horizontalAccuracy: pointData.horizontalAccuracy,
+                        verticalAccuracy: pointData.verticalAccuracy,
+                        speed: pointData.speed,
+                        course: pointData.course
+                    )
+                    point.session = session
+                    modelContext.insert(point)
+                }
+
+                try modelContext.save()
+
+                importedSessionName = importedData.name
+                showImportSuccess = true
+
+            } catch {
+                importErrorMessage = error.localizedDescription
+                showImportError = true
+            }
+
+        case .failure(let error):
+            importErrorMessage = error.localizedDescription
+            showImportError = true
         }
     }
 }
