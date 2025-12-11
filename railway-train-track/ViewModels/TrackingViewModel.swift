@@ -17,6 +17,7 @@ final class TrackingViewModel {
     var isPaused: Bool = false
     var currentSession: TrackingSession?
     var recordingInterval: Double = 1.0 // Default 1 second
+    var accuracyThreshold: Double = 50.0 // Default 50 meters
     var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
     var lastLocation: CLLocation?
     var errorMessage: String?
@@ -120,6 +121,7 @@ final class TrackingViewModel {
 
         isTracking = true
         isPaused = false
+        locationManager.updateAccuracyThreshold(accuracyThreshold)
         locationManager.startTracking(interval: recordingInterval)
 
         // Clear recoverable session state
@@ -245,6 +247,13 @@ final class TrackingViewModel {
         }
     }
 
+    func updateAccuracyThreshold(_ threshold: Double) {
+        accuracyThreshold = max(1.0, min(200.0, threshold))
+        if isTracking, !isPaused {
+            locationManager.updateAccuracyThreshold(accuracyThreshold)
+        }
+    }
+
     // MARK: - Session Recovery
 
     func checkForRecoverableSession() {
@@ -287,6 +296,7 @@ final class TrackingViewModel {
 
         isTracking = true
         isPaused = false
+        locationManager.updateAccuracyThreshold(accuracyThreshold)
         locationManager.startTracking(interval: recordingInterval)
 
         hasRecoverableSession = false
@@ -333,6 +343,7 @@ final class TrackingViewModel {
 
         isTracking = true
         isPaused = false
+        locationManager.updateAccuracyThreshold(accuracyThreshold)
         locationManager.startTracking(interval: recordingInterval)
 
         // Clear any recoverable session state
