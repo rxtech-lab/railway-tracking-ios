@@ -12,6 +12,8 @@ import QuartzCore
 import SwiftData
 import SwiftUI
 
+let cameraAnimationDuration: TimeInterval = 0.5
+
 /// Defines the source of route data for playback visualization
 enum RouteSourceMode: String, Codable, CaseIterable {
     case gps = "GPS"
@@ -166,6 +168,7 @@ final class SessionDetailViewModel {
 
     // Map state
     var mapCameraPosition: MapCameraPosition = .automatic
+    var cameraTrigger: Int = 0
 
     // Services
     private let stationService: TrainStationService
@@ -177,6 +180,10 @@ final class SessionDetailViewModel {
     private var timeBasedPlaybackTimer: Timer?
     private var displayLink: CADisplayLink?
     private var lastDisplayLinkTimestamp: CFTimeInterval = 0
+    // Timestamp of last line update
+    private var lastTraveledCoordinatesUpdate: CFTimeInterval = 0
+    // Timestamp of last camera update
+    private var lastCameraUpdate: CFTimeInterval = 0
 
     // Coordinate simplification cache
     // Key: epsilon value, Value: simplified coordinates
@@ -353,7 +360,7 @@ final class SessionDetailViewModel {
 
         // Collect all simplified points up to and including floorIndex
         var coords: [CLLocationCoordinate2D] = []
-        for i in 0...min(floorIndex, simplified.count - 1) {
+        for i in 0 ... min(floorIndex, simplified.count - 1) {
             coords.append(simplified[i])
         }
 
@@ -644,55 +651,6 @@ final class SessionDetailViewModel {
         displayLink?.add(to: .main, forMode: .common)
     }
 
-    @objc private func displayLinkUpdate(_ link: CADisplayLink) {
-        guard isPlayingAnimation else {
-            stopDisplayLink()
-            return
-        }
-
-        // Calculate delta time
-        let deltaTime: Double
-        if lastDisplayLinkTimestamp == 0 {
-            deltaTime = link.targetTimestamp - link.timestamp
-        } else {
-            deltaTime = link.targetTimestamp - lastDisplayLinkTimestamp
-        }
-        lastDisplayLinkTimestamp = link.targetTimestamp
-
-        // Advance elapsed time
-        playbackElapsedTime += deltaTime
-
-        // Check completion
-        if playbackElapsedTime >= playbackDurationSeconds {
-            playbackElapsedTime = playbackDurationSeconds
-            interpolatedCoordinate = calculateInterpolatedPosition()
-            traveledCoordinates = calculateTraveledCoordinates()
-            if let coord = interpolatedCoordinate {
-                withAnimation(.linear(duration: 0.016)) {
-                    mapCameraPosition = .camera(MapCamera(
-                        centerCoordinate: coord,
-                        distance: playbackCameraDistance
-                    ))
-                }
-            }
-            pauseTimeBasedPlayback()
-            showPlaybackMarker = false
-            return
-        }
-
-        // Update position, traveled path, and camera every frame
-        interpolatedCoordinate = calculateInterpolatedPosition()
-        traveledCoordinates = calculateTraveledCoordinates()
-
-        // Update camera to follow current position
-        if let coord = interpolatedCoordinate {
-            mapCameraPosition = .camera(MapCamera(
-                centerCoordinate: coord,
-                distance: playbackCameraDistance
-            ))
-        }
-    }
-
     private func stopDisplayLink() {
         displayLink?.invalidate()
         displayLink = nil
@@ -856,7 +814,7 @@ final class SessionDetailViewModel {
                 coordinates: session.coordinates,
                 radiusMeters: 500
             )
-            
+
             let deduplicatedStations = TrainStationService.deduplicateByName(stations)
 
             await MainActor.run { analysisProgress = 0.5 }
@@ -1088,5 +1046,54 @@ final class SessionDetailViewModel {
         stationPlaybackTimer?.invalidate()
         timeBasedPlaybackTimer?.invalidate()
         displayLink?.invalidate()
+    }
+}
+
+// MARK: Display link animation
+
+extension SessionDetailViewModel {
+    @objc private func displayLinkUpdate(_ link: CADisplayLink) {
+        guard isPlayingAnimation else {
+            stopDisplayLink()
+            return
+        }
+
+        // Calculate delta time
+        let deltaTime: Double
+        if lastDisplayLinkTimestamp == 0 {
+            deltaTime = link.targetTimestamp - link.timestamp
+        } else {
+            deltaTime = link.targetTimestamp - lastDisplayLinkTimestamp
+        }
+        lastDisplayLinkTimestamp = link.targetTimestamp
+
+        // Advance elapsed time
+        playbackElapsedTime += deltaTime
+
+        // Check completion
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = playbackDurationSeconds
+            interpolatedCoordinate = calculateInterpolatedPosition()
+            traveledCoordinates = calculateTraveledCoordinates()
+            cameraTrigger += 1 // Trigger final camera animation
+            pauseTimeBasedPlayback()
+            showPlaybackMarker = false
+            return
+        }
+
+        // Update position every frame for smooth marker movement
+        interpolatedCoordinate = calculateInterpolatedPosition()
+
+        // Update traveled path and trigger camera animation periodically
+        if link.timestamp - lastTraveledCoordinatesUpdate > 0.2 {
+            traveledCoordinates = calculateTraveledCoordinates()
+            lastTraveledCoordinatesUpdate = link.timestamp
+        }
+
+        // give some time for the animation to complete before triggering another
+        if link.timestamp - lastCameraUpdate > cameraAnimationDuration + 0.1 {
+            cameraTrigger += 1
+            lastCameraUpdate = link.timestamp
+        }
     }
 }

@@ -14,8 +14,8 @@
             filePath = "railway-train-track/ViewModels/StationDataViewModel.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "180"
-            endingLineNumber = "180"
+            startingLineNumber = "182"
+            endingLineNumber = "182"
             landmarkName = "fetchRailwayRoutes(between:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -30,56 +30,112 @@
             filePath = "railway-train-track/ViewModels/StationDataViewModel.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "173"
-            endingLineNumber = "173"
+            startingLineNumber = "175"
+            endingLineNumber = "175"
             landmarkName = "fetchRailwayRoutes(between:)"
             landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "D4C1B4E0-4BF7-4C8F-9D24-C9A61D88C03F - 33d953f1e24ed576"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(1) suspend resume partial function for railway_train_track.StationDataViewModel.fetchRailwayRoutes(between: Swift.Array&lt;railway_train_track.TrainStation&gt;) async -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/StationDataViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "176"
+                  endingLineNumber = "176">
+               </Location>
+               <Location
+                  uuid = "D4C1B4E0-4BF7-4C8F-9D24-C9A61D88C03F - 33d953f1e24ed576"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(1) suspend resume partial function for railway_train_track.StationDataViewModel.fetchRailwayRoutes(between: Swift.Array&lt;railway_train_track.TrainStation&gt;) async -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/StationDataViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "176"
+                  endingLineNumber = "176">
+               </Location>
+               <Location
+                  uuid = "D4C1B4E0-4BF7-4C8F-9D24-C9A61D88C03F - ee125c2197c11678"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(3) suspend resume partial function for railway_train_track.StationDataViewModel.fetchRailwayRoutes(between: Swift.Array&lt;railway_train_track.TrainStation&gt;) async -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/StationDataViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "176"
+                  endingLineNumber = "176">
+               </Location>
+               <Location
+                  uuid = "D4C1B4E0-4BF7-4C8F-9D24-C9A61D88C03F - ee125c2197c11678"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(3) suspend resume partial function for railway_train_track.StationDataViewModel.fetchRailwayRoutes(between: Swift.Array&lt;railway_train_track.TrainStation&gt;) async -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/StationDataViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "176"
+                  endingLineNumber = "176">
+               </Location>
+               <Location
+                  uuid = "D4C1B4E0-4BF7-4C8F-9D24-C9A61D88C03F - 73cff16efc1aeafb"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(6) suspend resume partial function for railway_train_track.StationDataViewModel.fetchRailwayRoutes(between: Swift.Array&lt;railway_train_track.TrainStation&gt;) async -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/StationDataViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "176"
+                  endingLineNumber = "176">
+               </Location>
+               <Location
+                  uuid = "D4C1B4E0-4BF7-4C8F-9D24-C9A61D88C03F - 73cff16efc1aeafb"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(6) suspend resume partial function for railway_train_track.StationDataViewModel.fetchRailwayRoutes(between: Swift.Array&lt;railway_train_track.TrainStation&gt;) async -&gt; ()"
+                  moduleName = "railway-train-track.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/StationDataViewModel.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "176"
+                  endingLineNumber = "176">
+               </Location>
+            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "A3639B58-6710-4DAF-BFB4-5253B43FF0CF"
-            shouldBeEnabled = "Yes"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "railway-train-track/ViewModels/SessionDetailViewModel.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "782"
-            endingLineNumber = "782"
-            landmarkName = "analyzeStations()"
+            startingLineNumber = "752"
+            endingLineNumber = "752"
+            landmarkName = "toggleStationPlayback()"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "A3639B58-6710-4DAF-BFB4-5253B43FF0CF - 3376473f35947cc9"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "railway_train_track.SessionDetailViewModel.seekToBeginningTimeBased() -&gt; ()"
-                  moduleName = "railway-train-track.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/SessionDetailViewModel.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "782"
-                  endingLineNumber = "782">
-               </Location>
-               <Location
-                  uuid = "A3639B58-6710-4DAF-BFB4-5253B43FF0CF - 74f7e43007b4154e"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "closure #1 @Sendable (__C.NSTimer) -&gt; () in railway_train_track.SessionDetailViewModel.startStationPlayback() -&gt; ()"
-                  moduleName = "railway-train-track.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/qiweili/Desktop/rxlab/railway-train-track/railway-train-track/ViewModels/SessionDetailViewModel.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "782"
-                  endingLineNumber = "782">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -92,9 +148,9 @@
             filePath = "railway-train-track/ViewModels/SessionDetailViewModel.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "795"
-            endingLineNumber = "795"
-            landmarkName = "analyzeStations()"
+            startingLineNumber = "765"
+            endingLineNumber = "765"
+            landmarkName = "seekToFirstStation()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

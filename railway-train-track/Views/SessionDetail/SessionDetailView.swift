@@ -49,7 +49,8 @@ struct SessionDetailView: View {
             },
             onMarkerTap: { marker in
                 viewModel.handleMarkerTap(marker)
-            }
+            },
+            cameraTrigger: viewModel.cameraTrigger
         )
         .ignoresSafeArea()
     }

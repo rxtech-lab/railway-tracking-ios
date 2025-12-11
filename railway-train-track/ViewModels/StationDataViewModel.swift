@@ -8,10 +8,10 @@
 //  Uses protocol-based providers for easy server migration in the future.
 //
 
-import Foundation
-import SwiftUI
-import MapKit
 import CoreLocation
+import Foundation
+import MapKit
+import SwiftUI
 
 // MARK: - Protocols for Future Server Migration
 
@@ -44,9 +44,9 @@ final class AppleMapsStationProvider: StationSearchProviding {
         // Filter for railway-related POIs
         return response.mapItems.filter { item in
             item.pointOfInterestCategory == .publicTransport ||
-            item.name?.lowercased().contains("station") == true ||
-            item.name?.lowercased().contains("railway") == true ||
-            item.name?.lowercased().contains("train") == true
+                item.name?.lowercased().contains("station") == true ||
+                item.name?.lowercased().contains("railway") == true ||
+                item.name?.lowercased().contains("train") == true
         }
     }
 }
@@ -87,7 +87,8 @@ final class OpenRailwayProvider: RailwayRouteProviding {
         let (data, response) = try await URLSession.shared.data(from: url)
 
         if let httpResponse = response as? HTTPURLResponse,
-           !(200...299).contains(httpResponse.statusCode) {
+           !(200 ... 299).contains(httpResponse.statusCode)
+        {
             throw URLError(.badServerResponse)
         }
 
@@ -172,7 +173,7 @@ final class StationDataViewModel {
         railwayError = nil
         var routes: [[CLLocationCoordinate2D]] = []
 
-        for i in 0..<(stations.count - 1) {
+        for i in 0 ..< (stations.count - 1) {
             let start = stations[i].coordinate
             let end = stations[i + 1].coordinate
 
