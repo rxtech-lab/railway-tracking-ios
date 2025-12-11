@@ -37,7 +37,9 @@ struct SessionEditSheet: View {
                 }
             }
             .navigationTitle("Edit Session")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -45,11 +47,13 @@ struct SessionEditSheet: View {
                     }
                 }
 
+                #if os(iOS)
                 ToolbarItem(placement: .bottomBar) {
                     ResumeTrackingButton(session: session) {
                         dismiss()
                     }
                 }
+                #endif
             }
         }
     }

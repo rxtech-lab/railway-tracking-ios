@@ -8,9 +8,13 @@
 import CoreLocation
 import Foundation
 import MapKit
+#if os(iOS)
 import QuartzCore
+#endif
 import SwiftData
 import SwiftUI
+
+let cameraAnimationDuration: TimeInterval = 0.5
 
 /// Defines the source of route data for playback visualization
 enum RouteSourceMode: String, Codable, CaseIterable {
@@ -73,6 +77,26 @@ enum SheetContent: Identifiable {
     var isTabBar: Bool {
         if case .tabBar = self { return true }
         return false
+    }
+}
+
+/// Sheet content specifically for toolbar actions on iPad/macOS
+/// These are presented as modal sheets instead of updating the detail column
+enum ToolbarSheetContent: Identifiable {
+    case playbackSettings
+    case exportCSV
+    case exportJSON
+    case exportVideo
+    case noteEditor(NoteEditorContext)
+
+    var id: String {
+        switch self {
+        case .playbackSettings: return "playbackSettings"
+        case .exportCSV: return "exportCSV"
+        case .exportJSON: return "exportJSON"
+        case .exportVideo: return "exportVideo"
+        case .noteEditor(let context): return "noteEditor-\(context.id)"
+        }
     }
 }
 
@@ -144,6 +168,9 @@ final class SessionDetailViewModel {
     // Sheet state
     var sheetContent: SheetContent = .tabBar
 
+    // Toolbar sheet state (for iPad/macOS - presents as modal sheet instead of detail column)
+    var toolbarSheetContent: ToolbarSheetContent?
+
     // Station playback state
     var selectedStationIndex: Int = 0
     var isPlayingStationAnimation: Bool = false
@@ -166,16 +193,31 @@ final class SessionDetailViewModel {
 
     // Map state
     var mapCameraPosition: MapCameraPosition = .automatic
+    var cameraTrigger: Int = 0
 
     // Services
     private let stationService: TrainStationService
     private let analysisService: StationAnalysisService
+    private let simplificationService = CoordinateSimplificationService()
     private var modelContext: ModelContext?
     private var playbackTimer: Timer?
     private var stationPlaybackTimer: Timer?
     private var timeBasedPlaybackTimer: Timer?
+    #if os(iOS)
     private var displayLink: CADisplayLink?
+    #else
+    private var displayLinkTimer: Timer?
+    #endif
     private var lastDisplayLinkTimestamp: CFTimeInterval = 0
+    // Timestamp of last line update
+    private var lastTraveledCoordinatesUpdate: CFTimeInterval = 0
+    // Timestamp of last camera update
+    private var lastCameraUpdate: CFTimeInterval = 0
+
+    // Coordinate simplification cache
+    // Key: epsilon value, Value: simplified coordinates
+    private var simplifiedCoordinatesCache: [Double: [CLLocationCoordinate2D]] = [:]
+    private var currentEpsilon: Double = 0.0001
 
     init(
         session: TrackingSession,
@@ -196,6 +238,50 @@ final class SessionDetailViewModel {
 
     var sortedLocationPoints: [LocationPoint] {
         session.sortedLocationPoints
+    }
+
+    // MARK: - Simplified Coordinates for Display
+
+    /// Simplified coordinates for map display (based on current zoom level)
+    /// Uses Douglas-Peucker algorithm to reduce point count while preserving shape
+    var displayCoordinates: [CLLocationCoordinate2D] {
+        getSimplifiedCoordinates(for: playbackCameraDistance)
+    }
+
+    /// Traveled coordinates for map display during playback
+    /// Note: In GPS mode, these are already simplified via displayCoordinates
+    var simplifiedTraveledCoordinates: [CLLocationCoordinate2D] {
+        traveledCoordinates
+    }
+
+    /// Get simplified coordinates from cache or compute them
+    private func getSimplifiedCoordinates(for cameraDistance: Double) -> [CLLocationCoordinate2D] {
+        let epsilon = CoordinateSimplificationService.SimplificationConfig.epsilon(for: cameraDistance)
+
+        // Return cached version if available
+        if let cached = simplifiedCoordinatesCache[epsilon] {
+            return cached
+        }
+
+        // Compute and cache
+        let fullCoordinates = session.coordinates
+        let simplified = simplificationService.simplify(coordinates: fullCoordinates, epsilon: epsilon)
+        simplifiedCoordinatesCache[epsilon] = simplified
+        return simplified
+    }
+
+    /// Invalidate the coordinate cache (call when session data changes)
+    func invalidateCoordinateCache() {
+        simplifiedCoordinatesCache.removeAll()
+    }
+
+    /// Handle camera distance changes to update epsilon if needed
+    func handleCameraDistanceChange(_ newDistance: Double) {
+        let newEpsilon = CoordinateSimplificationService.SimplificationConfig.epsilon(for: newDistance)
+        if newEpsilon != currentEpsilon {
+            currentEpsilon = newEpsilon
+            // Cache will be populated lazily on next displayCoordinates access
+        }
     }
 
     var sortedStationEvents: [StationPassEvent] {
@@ -290,19 +376,21 @@ final class SessionDetailViewModel {
         }
     }
 
-    /// GPS-based traveled coordinates (original implementation)
+    /// GPS-based traveled coordinates using simplified path
     private func calculateGPSTraveledCoordinates() -> [CLLocationCoordinate2D] {
-        let points = sortedLocationPoints
-        let targetTimestamp = calculateTargetTimestamp()
+        let simplified = displayCoordinates
+        guard simplified.count >= 2 else { return simplified }
 
-        // Collect all points up to the target time
+        // Calculate the index position based on playback progress
+        let progress = currentPlaybackProgress
+        let maxIndex = Double(simplified.count - 1)
+        let exactIndex = progress * maxIndex
+        let floorIndex = Int(exactIndex)
+
+        // Collect all simplified points up to and including floorIndex
         var coords: [CLLocationCoordinate2D] = []
-        for point in points {
-            if point.timestamp <= targetTimestamp {
-                coords.append(point.coordinate)
-            } else {
-                break
-            }
+        for i in 0 ... min(floorIndex, simplified.count - 1) {
+            coords.append(simplified[i])
         }
 
         // Append interpolated position if different from last point
@@ -520,48 +608,34 @@ final class SessionDetailViewModel {
         }
     }
 
-    /// GPS-based interpolation (original implementation)
+    /// GPS-based interpolation using simplified coordinates
     private func calculateGPSInterpolatedPosition() -> CLLocationCoordinate2D? {
-        let points = sortedLocationPoints
-        guard points.count >= 2,
-              let journeyStart = points.first?.timestamp,
-              journeyDuration > 0
-        else {
-            return points.first?.coordinate
+        let simplified = displayCoordinates
+        guard simplified.count >= 2 else {
+            return simplified.first
         }
 
-        let targetTimestamp = calculateTargetTimestamp()
+        // Use playback progress to determine position along simplified path
+        let progress = currentPlaybackProgress
+        let maxIndex = Double(simplified.count - 1)
+        let exactIndex = progress * maxIndex
 
-        // Find the two GPS points to interpolate between
-        var beforePoint: LocationPoint?
-        var afterPoint: LocationPoint?
-
-        for point in points {
-            if point.timestamp <= targetTimestamp {
-                beforePoint = point
-            }
-            if point.timestamp > targetTimestamp {
-                afterPoint = point
-                break
-            }
-        }
+        // Get the two points to interpolate between
+        let floorIndex = Int(exactIndex)
+        let ceilIndex = min(floorIndex + 1, simplified.count - 1)
 
         // Handle edge cases
-        guard let before = beforePoint else {
-            return points.first?.coordinate
-        }
-        guard let after = afterPoint else {
-            return points.last?.coordinate
+        if floorIndex >= simplified.count - 1 {
+            return simplified.last
         }
 
-        // Linear interpolation between the two points
-        let segmentDuration = after.timestamp.timeIntervalSince(before.timestamp)
-        guard segmentDuration > 0 else {
-            return before.coordinate
-        }
+        let before = simplified[floorIndex]
+        let after = simplified[ceilIndex]
 
-        let segmentProgress = targetTimestamp.timeIntervalSince(before.timestamp) / segmentDuration
+        // Calculate interpolation factor within the segment
+        let segmentProgress = exactIndex - Double(floorIndex)
 
+        // Linear interpolation between the two simplified points
         let interpolatedLat = before.latitude + (after.latitude - before.latitude) * segmentProgress
         let interpolatedLon = before.longitude + (after.longitude - before.longitude) * segmentProgress
 
@@ -602,68 +676,25 @@ final class SessionDetailViewModel {
 
         // Use DisplayLink for smooth 60fps animation
         lastDisplayLinkTimestamp = 0
+        #if os(iOS)
         displayLink = CADisplayLink(target: self, selector: #selector(displayLinkUpdate))
         displayLink?.add(to: .main, forMode: .common)
-    }
-
-    @objc private func displayLinkUpdate(_ link: CADisplayLink) {
-        guard isPlayingAnimation else {
-            stopDisplayLink()
-            return
+        #else
+        // Use Timer on macOS at ~60fps
+        displayLinkTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.macOSDisplayLinkUpdate()
         }
-
-        // Calculate delta time
-        let deltaTime: Double
-        if lastDisplayLinkTimestamp == 0 {
-            deltaTime = link.targetTimestamp - link.timestamp
-        } else {
-            deltaTime = link.targetTimestamp - lastDisplayLinkTimestamp
-        }
-        lastDisplayLinkTimestamp = link.targetTimestamp
-
-        // Advance elapsed time
-        playbackElapsedTime += deltaTime
-
-        // Check completion
-        if playbackElapsedTime >= playbackDurationSeconds {
-            playbackElapsedTime = playbackDurationSeconds
-            interpolatedCoordinate = calculateInterpolatedPosition()
-            traveledCoordinates = calculateTraveledCoordinates()
-            if let coord = interpolatedCoordinate {
-                withAnimation(.linear(duration: 0.016)) {
-                    mapCameraPosition = .camera(MapCamera(
-                        centerCoordinate: coord,
-                        distance: playbackCameraDistance
-                    ))
-                }
-            }
-            pauseTimeBasedPlayback()
-            showPlaybackMarker = false
-            return
-        }
-
-        // Update position and traveled path every frame
-        interpolatedCoordinate = calculateInterpolatedPosition()
-        let traveledCoordinates = calculateTraveledCoordinates()
-
-        // Debug: print every 0.1 seconds
-        if Int(playbackElapsedTime * 10) != Int((playbackElapsedTime - deltaTime) * 10) {
-            // update camera
-            withAnimation(.linear(duration: 0.05)) {
-                self.traveledCoordinates = traveledCoordinates
-                if let coord = interpolatedCoordinate {
-                    mapCameraPosition = .camera(MapCamera(
-                        centerCoordinate: coord,
-                        distance: playbackCameraDistance
-                    ))
-                }
-            }
-        }
+        #endif
     }
 
     private func stopDisplayLink() {
+        #if os(iOS)
         displayLink?.invalidate()
         displayLink = nil
+        #else
+        displayLinkTimer?.invalidate()
+        displayLinkTimer = nil
+        #endif
         lastDisplayLinkTimestamp = 0
     }
 
@@ -824,7 +855,7 @@ final class SessionDetailViewModel {
                 coordinates: session.coordinates,
                 radiusMeters: 500
             )
-            
+
             let deduplicatedStations = TrainStationService.deduplicateByName(stations)
 
             await MainActor.run { analysisProgress = 0.5 }
@@ -1055,6 +1086,108 @@ final class SessionDetailViewModel {
         playbackTimer?.invalidate()
         stationPlaybackTimer?.invalidate()
         timeBasedPlaybackTimer?.invalidate()
+        #if os(iOS)
         displayLink?.invalidate()
+        #else
+        displayLinkTimer?.invalidate()
+        #endif
     }
+}
+
+// MARK: Display link animation
+
+extension SessionDetailViewModel {
+    #if os(iOS)
+    @objc private func displayLinkUpdate(_ link: CADisplayLink) {
+        guard isPlayingAnimation else {
+            stopDisplayLink()
+            return
+        }
+
+        // Calculate delta time
+        let deltaTime: Double
+        if lastDisplayLinkTimestamp == 0 {
+            deltaTime = link.targetTimestamp - link.timestamp
+        } else {
+            deltaTime = link.targetTimestamp - lastDisplayLinkTimestamp
+        }
+        lastDisplayLinkTimestamp = link.targetTimestamp
+
+        // Advance elapsed time
+        playbackElapsedTime += deltaTime
+
+        // Check completion
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = playbackDurationSeconds
+            interpolatedCoordinate = calculateInterpolatedPosition()
+            traveledCoordinates = calculateTraveledCoordinates()
+            cameraTrigger += 1 // Trigger final camera animation
+            pauseTimeBasedPlayback()
+            showPlaybackMarker = false
+            return
+        }
+
+        // Update position every frame for smooth marker movement
+        interpolatedCoordinate = calculateInterpolatedPosition()
+
+        // Update traveled path and trigger camera animation periodically
+        if link.timestamp - lastTraveledCoordinatesUpdate > 0.2 {
+            traveledCoordinates = calculateTraveledCoordinates()
+            lastTraveledCoordinatesUpdate = link.timestamp
+        }
+
+        // give some time for the animation to complete before triggering another
+        if link.timestamp - lastCameraUpdate > cameraAnimationDuration + 0.1 {
+            cameraTrigger += 1
+            lastCameraUpdate = link.timestamp
+        }
+    }
+    #else
+    private func macOSDisplayLinkUpdate() {
+        guard isPlayingAnimation else {
+            stopDisplayLink()
+            return
+        }
+
+        let currentTime = CACurrentMediaTime()
+
+        // Calculate delta time
+        let deltaTime: Double
+        if lastDisplayLinkTimestamp == 0 {
+            deltaTime = 1.0 / 60.0 // ~16ms for first frame
+        } else {
+            deltaTime = currentTime - lastDisplayLinkTimestamp
+        }
+        lastDisplayLinkTimestamp = currentTime
+
+        // Advance elapsed time
+        playbackElapsedTime += deltaTime
+
+        // Check completion
+        if playbackElapsedTime >= playbackDurationSeconds {
+            playbackElapsedTime = playbackDurationSeconds
+            interpolatedCoordinate = calculateInterpolatedPosition()
+            traveledCoordinates = calculateTraveledCoordinates()
+            cameraTrigger += 1 // Trigger final camera animation
+            pauseTimeBasedPlayback()
+            showPlaybackMarker = false
+            return
+        }
+
+        // Update position every frame for smooth marker movement
+        interpolatedCoordinate = calculateInterpolatedPosition()
+
+        // Update traveled path and trigger camera animation periodically
+        if currentTime - lastTraveledCoordinatesUpdate > 0.2 {
+            traveledCoordinates = calculateTraveledCoordinates()
+            lastTraveledCoordinatesUpdate = currentTime
+        }
+
+        // give some time for the animation to complete before triggering another
+        if currentTime - lastCameraUpdate > cameraAnimationDuration + 0.1 {
+            cameraTrigger += 1
+            lastCameraUpdate = currentTime
+        }
+    }
+    #endif
 }

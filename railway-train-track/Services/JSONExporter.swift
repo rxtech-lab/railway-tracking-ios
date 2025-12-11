@@ -9,6 +9,11 @@ import Foundation
 
 final class JSONExporter {
 
+    /// Default batch size for streaming exports
+    static let defaultBatchSize = 1000
+
+    // MARK: - Export Data Structures (Codable for validation/reparsing)
+
     struct LocationExport: Codable {
         let sessionId: String
         let sessionName: String
@@ -46,95 +51,266 @@ final class JSONExporter {
         }
     }
 
+    // MARK: - Streaming Export Methods
+
+    /// Export locations using streaming file writes for memory efficiency
+    /// - Parameters:
+    ///   - session: The tracking session to export
+    ///   - filename: Output filename (without extension)
+    ///   - batchSize: Number of locations to process per batch (default: 1000)
+    ///   - progress: Progress callback (0.0 to 1.0)
+    /// - Returns: URL of the exported file
     func exportLocations(
         session: TrackingSession,
         filename: String,
+        batchSize: Int = defaultBatchSize,
         progress: @escaping (Double) -> Void
     ) async throws -> URL {
         let points = session.sortedLocationPoints
+        let fileURL = try createFileURL(filename: filename)
 
-        var locationData: [LocationExport.LocationData] = []
+        // Create empty file
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let fileHandle = try FileHandle(forWritingTo: fileURL)
 
-        for (index, point) in points.enumerated() {
-            locationData.append(LocationExport.LocationData(
-                timestamp: point.timestamp.ISO8601Format(),
-                latitude: point.latitude,
-                longitude: point.longitude,
-                altitude: point.altitude,
-                speed: point.speed,
-                course: point.course,
-                horizontalAccuracy: point.horizontalAccuracy,
-                verticalAccuracy: point.verticalAccuracy
-            ))
+        defer {
+            try? fileHandle.close()
+        }
 
+        // Write opening JSON structure with metadata
+        let metadata = buildLocationMetadata(session: session)
+        try fileHandle.write(contentsOf: metadata)
+
+        // Handle empty dataset
+        guard !points.isEmpty else {
+            // Close the locations array and JSON object
+            let closing = "  ]\n}"
+            if let closingData = closing.data(using: .utf8) {
+                try fileHandle.write(contentsOf: closingData)
+            }
+            await MainActor.run { progress(1.0) }
+            return fileURL
+        }
+
+        // Process locations in batches
+        let totalPoints = points.count
+        var isFirstItem = true
+
+        for batchStart in stride(from: 0, to: totalPoints, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, totalPoints)
+            let batch = points[batchStart..<batchEnd]
+
+            // Build batch JSON content
+            var batchContent = ""
+            for point in batch {
+                if !isFirstItem {
+                    batchContent += ",\n"
+                }
+                isFirstItem = false
+
+                let locationJSON = buildLocationJSON(point: point)
+                batchContent += locationJSON
+            }
+
+            // Write batch to file
+            if let batchData = batchContent.data(using: .utf8) {
+                try fileHandle.write(contentsOf: batchData)
+            }
+
+            // Update progress
             await MainActor.run {
-                progress(Double(index + 1) / Double(points.count))
+                progress(Double(batchEnd) / Double(totalPoints))
             }
         }
 
-        let export = LocationExport(
-            sessionId: session.id.uuidString,
-            sessionName: session.name,
-            startTime: session.startTime.ISO8601Format(),
-            endTime: session.endTime?.ISO8601Format(),
-            totalDistance: session.totalDistance,
-            averageSpeed: session.averageSpeed,
-            locations: locationData
-        )
+        // Close the locations array and JSON object
+        let closing = "\n  ]\n}"
+        if let closingData = closing.data(using: .utf8) {
+            try fileHandle.write(contentsOf: closingData)
+        }
 
-        return try saveToFile(export, filename: filename)
+        return fileURL
     }
 
+    /// Export stations using streaming file writes for memory efficiency
+    /// - Parameters:
+    ///   - session: The tracking session to export
+    ///   - filename: Output filename (without extension)
+    ///   - batchSize: Number of stations to process per batch (default: 1000)
+    ///   - progress: Progress callback (0.0 to 1.0)
+    /// - Returns: URL of the exported file
     func exportStations(
         session: TrackingSession,
         filename: String,
+        batchSize: Int = defaultBatchSize,
         progress: @escaping (Double) -> Void
     ) async throws -> URL {
         let events = session.stationPassEvents.sorted { $0.timestamp < $1.timestamp }
+        let fileURL = try createFileURL(filename: filename)
 
-        var stationData: [StationExport.StationData] = []
+        // Create empty file
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        let fileHandle = try FileHandle(forWritingTo: fileURL)
 
-        for (index, event) in events.enumerated() {
-            if let station = event.station {
-                stationData.append(StationExport.StationData(
-                    stationName: station.name,
-                    stationLatitude: station.latitude,
-                    stationLongitude: station.longitude,
-                    stationType: station.stationType,
-                    operatorName: station.operatorName,
-                    passedAt: event.timestamp.ISO8601Format(),
-                    distanceFromStation: event.distanceFromStation
-                ))
+        defer {
+            try? fileHandle.close()
+        }
+
+        // Write opening JSON structure with metadata
+        let metadata = buildStationMetadata(session: session)
+        try fileHandle.write(contentsOf: metadata)
+
+        // Handle empty dataset
+        guard !events.isEmpty else {
+            let closing = "  ]\n}"
+            if let closingData = closing.data(using: .utf8) {
+                try fileHandle.write(contentsOf: closingData)
+            }
+            await MainActor.run { progress(1.0) }
+            return fileURL
+        }
+
+        // Process stations in batches
+        let totalEvents = events.count
+        var isFirstItem = true
+
+        for batchStart in stride(from: 0, to: totalEvents, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, totalEvents)
+            let batch = events[batchStart..<batchEnd]
+
+            // Build batch JSON content
+            var batchContent = ""
+            for event in batch {
+                guard let station = event.station else { continue }
+
+                if !isFirstItem {
+                    batchContent += ",\n"
+                }
+                isFirstItem = false
+
+                let stationJSON = buildStationJSON(station: station, event: event)
+                batchContent += stationJSON
             }
 
+            // Write batch to file
+            if let batchData = batchContent.data(using: .utf8) {
+                try fileHandle.write(contentsOf: batchData)
+            }
+
+            // Update progress
             await MainActor.run {
-                progress(Double(index + 1) / Double(events.count))
+                progress(Double(batchEnd) / Double(totalEvents))
             }
         }
 
-        let export = StationExport(
-            sessionId: session.id.uuidString,
-            sessionName: session.name,
-            stations: stationData
-        )
+        // Close the stations array and JSON object
+        let closing = "\n  ]\n}"
+        if let closingData = closing.data(using: .utf8) {
+            try fileHandle.write(contentsOf: closingData)
+        }
 
-        return try saveToFile(export, filename: filename)
+        return fileURL
     }
 
-    private func saveToFile<T: Encodable>(_ data: T, filename: String) throws -> URL {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    // MARK: - Private Helpers
 
-        let jsonData = try encoder.encode(data)
+    /// Build the opening JSON structure with session metadata for locations
+    private func buildLocationMetadata(session: TrackingSession) -> Data {
+        var json = "{\n"
+        json += "  \"sessionId\": \"\(session.id.uuidString)\",\n"
+        json += "  \"sessionName\": \"\(escapeJSON(session.name))\",\n"
+        json += "  \"startTime\": \"\(session.startTime.ISO8601Format())\",\n"
 
+        if let endTime = session.endTime {
+            json += "  \"endTime\": \"\(endTime.ISO8601Format())\",\n"
+        } else {
+            json += "  \"endTime\": null,\n"
+        }
+
+        if let totalDistance = session.totalDistance {
+            json += "  \"totalDistance\": \(totalDistance),\n"
+        } else {
+            json += "  \"totalDistance\": null,\n"
+        }
+
+        if let averageSpeed = session.averageSpeed {
+            json += "  \"averageSpeed\": \(averageSpeed),\n"
+        } else {
+            json += "  \"averageSpeed\": null,\n"
+        }
+
+        json += "  \"locations\": [\n"
+
+        return json.data(using: .utf8)!
+    }
+
+    /// Build the opening JSON structure with session metadata for stations
+    private func buildStationMetadata(session: TrackingSession) -> Data {
+        var json = "{\n"
+        json += "  \"sessionId\": \"\(session.id.uuidString)\",\n"
+        json += "  \"sessionName\": \"\(escapeJSON(session.name))\",\n"
+        json += "  \"stations\": [\n"
+
+        return json.data(using: .utf8)!
+    }
+
+    /// Build JSON for a single location point
+    private func buildLocationJSON(point: LocationPoint) -> String {
+        var json = "    {\n"
+        json += "      \"timestamp\": \"\(point.timestamp.ISO8601Format())\",\n"
+        json += "      \"latitude\": \(point.latitude),\n"
+        json += "      \"longitude\": \(point.longitude),\n"
+        json += "      \"altitude\": \(point.altitude),\n"
+        json += "      \"speed\": \(point.speed),\n"
+        json += "      \"course\": \(point.course),\n"
+        json += "      \"horizontalAccuracy\": \(point.horizontalAccuracy),\n"
+        json += "      \"verticalAccuracy\": \(point.verticalAccuracy)\n"
+        json += "    }"
+        return json
+    }
+
+    /// Build JSON for a single station
+    private func buildStationJSON(station: TrainStation, event: StationPassEvent) -> String {
+        var json = "    {\n"
+        json += "      \"stationName\": \"\(escapeJSON(station.name))\",\n"
+        json += "      \"stationLatitude\": \(station.latitude),\n"
+        json += "      \"stationLongitude\": \(station.longitude),\n"
+
+        if let stationType = station.stationType {
+            json += "      \"stationType\": \"\(escapeJSON(stationType))\",\n"
+        } else {
+            json += "      \"stationType\": null,\n"
+        }
+
+        if let operatorName = station.operatorName {
+            json += "      \"operatorName\": \"\(escapeJSON(operatorName))\",\n"
+        } else {
+            json += "      \"operatorName\": null,\n"
+        }
+
+        json += "      \"passedAt\": \"\(event.timestamp.ISO8601Format())\",\n"
+        json += "      \"distanceFromStation\": \(event.distanceFromStation)\n"
+        json += "    }"
+        return json
+    }
+
+    /// Escape special characters for JSON strings
+    private func escapeJSON(_ string: String) -> String {
+        var result = string
+        result = result.replacingOccurrences(of: "\\", with: "\\\\")
+        result = result.replacingOccurrences(of: "\"", with: "\\\"")
+        result = result.replacingOccurrences(of: "\n", with: "\\n")
+        result = result.replacingOccurrences(of: "\r", with: "\\r")
+        result = result.replacingOccurrences(of: "\t", with: "\\t")
+        return result
+    }
+
+    /// Create a sanitized file URL for the JSON export
+    private func createFileURL(filename: String) throws -> URL {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let sanitizedFilename = filename
             .replacingOccurrences(of: " ", with: "_")
             .replacingOccurrences(of: "/", with: "-")
-        let fileURL = documentsURL.appendingPathComponent("\(sanitizedFilename).json")
-
-        try jsonData.write(to: fileURL)
-
-        return fileURL
+        return documentsURL.appendingPathComponent("\(sanitizedFilename).json")
     }
 }

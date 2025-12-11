@@ -9,18 +9,30 @@ import SwiftUI
 
 struct PlaybackControlsView: View {
     @Bindable var viewModel: SessionDetailViewModel
+    @State private var sliderValue: Double = 0
+    @State private var isDragging: Bool = false
 
     var body: some View {
         VStack(spacing: 8) {
             // Time-based progress slider
             Slider(
-                value: Binding(
-                    get: { viewModel.playbackElapsedTime },
-                    set: { viewModel.seekToTime($0) }
-                ),
-                in: 0...viewModel.playbackDurationSeconds
+                value: $sliderValue,
+                in: 0...viewModel.playbackDurationSeconds,
+                onEditingChanged: { editing in
+                    isDragging = editing
+                    if !editing {
+                        // Only update viewModel when drag finishes
+                        viewModel.seekToTime(sliderValue)
+                    }
+                }
             )
             .disabled(viewModel.totalLocationPoints <= 1)
+            .onChange(of: viewModel.playbackElapsedTime) { _, newValue in
+                // Sync slider with playback when not dragging
+                if !isDragging {
+                    sliderValue = newValue
+                }
+            }
 
             HStack {
                 // Elapsed / Total time

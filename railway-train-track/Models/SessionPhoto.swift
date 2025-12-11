@@ -7,7 +7,14 @@
 
 import Foundation
 import SwiftData
+
+#if canImport(UIKit)
 import UIKit
+typealias PlatformImage = UIImage
+#elseif canImport(AppKit)
+import AppKit
+typealias PlatformImage = NSImage
+#endif
 
 @Model
 final class SessionPhoto {
@@ -34,13 +41,13 @@ final class SessionPhoto {
 
     // MARK: - Computed Properties
 
-    var image: UIImage? {
-        UIImage(data: imageData)
+    var image: PlatformImage? {
+        PlatformImage(data: imageData)
     }
 
-    var thumbnail: UIImage? {
+    var thumbnail: PlatformImage? {
         if let thumbnailData = thumbnailData {
-            return UIImage(data: thumbnailData)
+            return PlatformImage(data: thumbnailData)
         }
         return image
     }
@@ -48,12 +55,12 @@ final class SessionPhoto {
     // MARK: - Factory Methods
 
     static func create(
-        from image: UIImage,
+        from image: PlatformImage,
         compressionQuality: CGFloat = 0.7,
         thumbnailSize: CGSize = CGSize(width: 150, height: 150),
         displayOrder: Int = 0
     ) -> SessionPhoto? {
-        guard let imageData = image.jpegData(compressionQuality: compressionQuality) else {
+        guard let imageData = getJpegData(from: image, compressionQuality: compressionQuality) else {
             return nil
         }
 
@@ -67,7 +74,18 @@ final class SessionPhoto {
         )
     }
 
-    private static func generateThumbnail(from image: UIImage, size: CGSize) -> Data? {
+    private static func getJpegData(from image: PlatformImage, compressionQuality: CGFloat) -> Data? {
+        #if canImport(UIKit)
+        return image.jpegData(compressionQuality: compressionQuality)
+        #elseif canImport(AppKit)
+        var rect = NSRect(origin: .zero, size: image.size)
+        guard let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
+        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+        return bitmapRep.representation(using: NSBitmapImageRep.FileType.jpeg, properties: [NSBitmapImageRep.PropertyKey.compressionFactor: compressionQuality])
+        #endif
+    }
+
+    private static func generateThumbnail(from image: PlatformImage, size: CGSize) -> Data? {
         let aspectWidth = size.width / image.size.width
         let aspectHeight = size.height / image.size.height
         let aspectRatio = min(aspectWidth, aspectHeight)
@@ -77,11 +95,21 @@ final class SessionPhoto {
             height: image.size.height * aspectRatio
         )
 
+        #if canImport(UIKit)
         UIGraphicsBeginImageContextWithOptions(newSize, false, 0)
         image.draw(in: CGRect(origin: .zero, size: newSize))
         let thumbnail = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-
         return thumbnail?.jpegData(compressionQuality: 0.5)
+        #elseif canImport(AppKit)
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: newSize),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: NSCompositingOperation.copy,
+                   fraction: 1.0)
+        newImage.unlockFocus()
+        return getJpegData(from: newImage, compressionQuality: 0.5)
+        #endif
     }
 }

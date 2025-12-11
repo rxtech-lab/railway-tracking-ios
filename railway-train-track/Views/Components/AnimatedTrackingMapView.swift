@@ -51,6 +51,9 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
     /// Callback when user taps on a marker
     let onMarkerTap: ((TrackingPoint) -> Void)?
 
+    /// Trigger value for keyframe camera animation (increment to animate)
+    let cameraTrigger: Int
+
     /// Additional map content (annotations, markers, etc.)
     @MapContentBuilder let additionalContent: () -> Content
 
@@ -91,6 +94,7 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         onCameraDistanceChanged: ((Double) -> Void)? = nil,
         onLongPress: ((CLLocationCoordinate2D) -> Void)? = nil,
         onMarkerTap: ((TrackingPoint) -> Void)? = nil,
+        cameraTrigger: Int = 0,
         @MapContentBuilder additionalContent: @escaping () -> Content
     ) {
         self._cameraPosition = cameraPosition
@@ -108,6 +112,7 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
         self.onCameraDistanceChanged = onCameraDistanceChanged
         self.onLongPress = onLongPress
         self.onMarkerTap = onMarkerTap
+        self.cameraTrigger = cameraTrigger
     }
 
     @GestureState private var longPressLocation: CGPoint = .zero
@@ -180,7 +185,8 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
                         switch value {
                         case .second(true, let drag):
                             if let location = drag?.location,
-                               let coordinate = proxy.convert(location, from: .local) {
+                               let coordinate = proxy.convert(location, from: .local)
+                            {
                                 onLongPress?(coordinate)
                             }
                         default:
@@ -188,6 +194,15 @@ struct AnimatedTrackingMapView<Content: MapContent>: View {
                         }
                     }
             )
+            .mapCameraKeyframeAnimator(trigger: cameraTrigger) { initialCamera in
+                KeyframeTrack(\.centerCoordinate) {
+                    SpringKeyframe(
+                        currentCoordinate ?? initialCamera.centerCoordinate,
+                        duration: cameraAnimationDuration,
+                        spring: .smooth(duration: cameraAnimationDuration, extraBounce: 0)
+                    )
+                }
+            }
         }
     }
 
@@ -254,7 +269,8 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         cameraDistance: Double = 2000.0,
         onCameraDistanceChanged: ((Double) -> Void)? = nil,
         onLongPress: ((CLLocationCoordinate2D) -> Void)? = nil,
-        onMarkerTap: ((TrackingPoint) -> Void)? = nil
+        onMarkerTap: ((TrackingPoint) -> Void)? = nil,
+        cameraTrigger: Int = 0
     ) {
         self._cameraPosition = cameraPosition
         self.currentCoordinate = currentCoordinate
@@ -270,6 +286,7 @@ extension AnimatedTrackingMapView where Content == EmptyMapContent {
         self.onCameraDistanceChanged = onCameraDistanceChanged
         self.onLongPress = onLongPress
         self.onMarkerTap = onMarkerTap
+        self.cameraTrigger = cameraTrigger
         self.additionalContent = { EmptyMapContent() }
     }
 }

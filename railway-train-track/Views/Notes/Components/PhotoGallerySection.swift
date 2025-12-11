@@ -41,7 +41,7 @@ struct PhotoGallerySection: View {
             if viewModel.photos.isEmpty {
                 // Empty state
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemGray6))
+                    .fill(Color.gray.opacity(0.15))
                     .frame(height: 120)
                     .overlay {
                         VStack(spacing: 8) {

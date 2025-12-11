@@ -16,6 +16,15 @@ final class ExportViewModel {
     var exportedFileURL: URL?
     var errorMessage: String?
     var showShareSheet: Bool = false
+    var showProgressModal: Bool = false
+    var currentExportType: ExportType = .csv
+    var totalItemsToExport: Int = 0
+
+    enum ExportType: String {
+        case csv = "CSV"
+        case json = "JSON"
+        case video = "Video"
+    }
 
     // CSV Settings
     var csvFilename: String = ""
@@ -42,6 +51,9 @@ final class ExportViewModel {
         isExporting = true
         exportProgress = 0
         errorMessage = nil
+        currentExportType = .csv
+        totalItemsToExport = session.locationPoints.count
+        showProgressModal = true
 
         do {
             let filename = csvFilename.isEmpty ? "locations_export" : csvFilename
@@ -52,9 +64,11 @@ final class ExportViewModel {
                 self?.exportProgress = progress
             }
             exportedFileURL = url
+            showProgressModal = false
             showShareSheet = true
         } catch {
             errorMessage = error.localizedDescription
+            showProgressModal = false
         }
 
         isExporting = false
@@ -64,6 +78,9 @@ final class ExportViewModel {
         isExporting = true
         exportProgress = 0
         errorMessage = nil
+        currentExportType = .csv
+        totalItemsToExport = session.stationPassEvents.count
+        showProgressModal = true
 
         do {
             let filename = csvFilename.isEmpty ? "stations_export" : "\(csvFilename)_stations"
@@ -74,9 +91,11 @@ final class ExportViewModel {
                 self?.exportProgress = progress
             }
             exportedFileURL = url
+            showProgressModal = false
             showShareSheet = true
         } catch {
             errorMessage = error.localizedDescription
+            showProgressModal = false
         }
 
         isExporting = false
@@ -88,6 +107,9 @@ final class ExportViewModel {
         isExporting = true
         exportProgress = 0
         errorMessage = nil
+        currentExportType = .json
+        totalItemsToExport = session.locationPoints.count
+        showProgressModal = true
 
         do {
             let filename = csvFilename.isEmpty ? "locations_export" : csvFilename
@@ -98,9 +120,11 @@ final class ExportViewModel {
                 self?.exportProgress = progress
             }
             exportedFileURL = url
+            showProgressModal = false
             showShareSheet = true
         } catch {
             errorMessage = error.localizedDescription
+            showProgressModal = false
         }
 
         isExporting = false
@@ -110,6 +134,9 @@ final class ExportViewModel {
         isExporting = true
         exportProgress = 0
         errorMessage = nil
+        currentExportType = .json
+        totalItemsToExport = session.stationPassEvents.count
+        showProgressModal = true
 
         do {
             let filename = csvFilename.isEmpty ? "stations_export" : "\(csvFilename)_stations"
@@ -120,9 +147,11 @@ final class ExportViewModel {
                 self?.exportProgress = progress
             }
             exportedFileURL = url
+            showProgressModal = false
             showShareSheet = true
         } catch {
             errorMessage = error.localizedDescription
+            showProgressModal = false
         }
 
         isExporting = false
@@ -134,6 +163,9 @@ final class ExportViewModel {
         isExporting = true
         exportProgress = 0
         errorMessage = nil
+        currentExportType = .video
+        totalItemsToExport = session.locationPoints.count
+        showProgressModal = true
 
         do {
             let url = try await videoExporter.export(
@@ -144,9 +176,11 @@ final class ExportViewModel {
                 self?.exportProgress = progress
             }
             exportedFileURL = url
+            showProgressModal = false
             showShareSheet = true
         } catch {
             errorMessage = error.localizedDescription
+            showProgressModal = false
         }
 
         isExporting = false
@@ -160,5 +194,16 @@ final class ExportViewModel {
         exportedFileURL = nil
         errorMessage = nil
         showShareSheet = false
+        showProgressModal = false
+        totalItemsToExport = 0
+    }
+
+    /// Convert internal ExportType to ExportProgressView.ExportType for UI
+    var progressViewExportType: ExportProgressView.ExportType {
+        switch currentExportType {
+        case .csv: return .csv
+        case .json: return .json
+        case .video: return .video
+        }
     }
 }

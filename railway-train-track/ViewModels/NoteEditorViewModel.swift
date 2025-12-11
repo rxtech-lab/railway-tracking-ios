@@ -10,6 +10,9 @@ import Foundation
 import PhotosUI
 import SwiftData
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @Observable
 final class NoteEditorViewModel {
@@ -21,7 +24,7 @@ final class NoteEditorViewModel {
 
     struct PhotoItem: Identifiable {
         let id = UUID()
-        var image: UIImage
+        var image: PlatformImage
         var data: Data
     }
 
@@ -48,9 +51,20 @@ final class NoteEditorViewModel {
 
         for item in selectedPhotoItems {
             if let data = try? await item.loadTransferable(type: Data.self),
-               let image = UIImage(data: data)
+               let image = PlatformImage(data: data)
             {
+                #if os(iOS)
                 let compressedData = image.jpegData(compressionQuality: 0.7) ?? data
+                #elseif os(macOS)
+                var rect = NSRect(origin: .zero, size: image.size)
+                let compressedData: Data
+                if let cgImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) {
+                    let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+                    compressedData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) ?? data
+                } else {
+                    compressedData = data
+                }
+                #endif
                 await MainActor.run {
                     photos.append(PhotoItem(image: image, data: compressedData))
                 }

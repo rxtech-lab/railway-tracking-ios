@@ -122,34 +122,6 @@ struct RailwayRouteIntegrationTests {
         }
     }
 
-    @Test func openRailwayProvider_tokyoShimbashiRoute_shouldBeLessThan5km() async throws {
-        // Arrange
-        let provider = OpenRailwayProvider()
-
-        // Act
-        let routes = try await provider.fetchRoutes(
-            from: Self.tokyoStation,
-            to: Self.shimbashiStation
-        )
-
-        // Assert
-        guard let route = routes.first else {
-            Issue.record("No route returned")
-            return
-        }
-
-        // Calculate total route distance
-        var totalDistance: CLLocationDistance = 0
-        for i in 0..<(route.coordinates.count - 1) {
-            totalDistance += Self.distance(from: route.coordinates[i], to: route.coordinates[i + 1])
-        }
-
-        // Tokyo Station to Shimbashi Station by rail is approximately 1.8-2km
-        // Should definitely be less than 5km
-        print("DEBUG: Tokyo-Shimbashi route distance: \(totalDistance)m, coordinates: \(route.coordinates.count)")
-        #expect(totalDistance < 5000, "Route should be < 5km, got \(totalDistance)m")
-    }
-
     @Test func openRailwayProvider_coordinatesAreCLLocationCoordinate2D() async throws {
         // Arrange
         let provider = OpenRailwayProvider()

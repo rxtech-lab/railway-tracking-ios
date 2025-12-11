@@ -6,22 +6,36 @@
 //
 
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 struct ExportMenuButton: View {
     @Bindable var viewModel: SessionDetailViewModel
     @Bindable var exportViewModel: ExportViewModel
+    var presentationMode: PresentationMode = .sheet
 
     var body: some View {
         Menu {
             Section("Data Export") {
                 Button {
-                    viewModel.sheetContent = .exportCSV
+                    if presentationMode == .sheet {
+                        viewModel.sheetContent = .exportCSV
+                    } else {
+                        viewModel.toolbarSheetContent = .exportCSV
+                    }
                 } label: {
                     Label("Export CSV", systemImage: "tablecells")
                 }
 
                 Button {
-                    viewModel.sheetContent = .exportJSON
+                    if presentationMode == .sheet {
+                        viewModel.sheetContent = .exportJSON
+                    } else {
+                        viewModel.toolbarSheetContent = .exportJSON
+                    }
                 } label: {
                     Label("Export JSON", systemImage: "curlybraces")
                 }
@@ -30,7 +44,11 @@ struct ExportMenuButton: View {
             if viewModel.selectedTab == .stations && viewModel.session.stationAnalysisCompleted {
                 Section("Video Export") {
                     Button {
-                        viewModel.sheetContent = .exportVideo
+                        if presentationMode == .sheet {
+                            viewModel.sheetContent = .exportVideo
+                        } else {
+                            viewModel.toolbarSheetContent = .exportVideo
+                        }
                     } label: {
                         Label("Export Video", systemImage: "film")
                     }
@@ -87,14 +105,6 @@ struct CSVExportContent: View {
                 .disabled(exportViewModel.isExporting)
             }
 
-            if exportViewModel.isExporting {
-                Section {
-                    ProgressView(value: exportViewModel.exportProgress) {
-                        Text("Exporting...")
-                    }
-                }
-            }
-
             if let error = exportViewModel.errorMessage {
                 Section {
                     Text(error)
@@ -102,6 +112,12 @@ struct CSVExportContent: View {
                 }
             }
         }
+        .exportProgress(
+            isPresented: exportViewModel.showProgressModal,
+            exportType: exportViewModel.progressViewExportType,
+            progress: exportViewModel.exportProgress,
+            totalItems: exportViewModel.totalItemsToExport
+        )
         .sheet(isPresented: $exportViewModel.showShareSheet) {
             if let url = exportViewModel.exportedFileURL {
                 ShareSheet(items: [url])
@@ -158,14 +174,6 @@ struct JSONExportContent: View {
                 .disabled(exportViewModel.isExporting)
             }
 
-            if exportViewModel.isExporting {
-                Section {
-                    ProgressView(value: exportViewModel.exportProgress) {
-                        Text("Exporting...")
-                    }
-                }
-            }
-
             if let error = exportViewModel.errorMessage {
                 Section {
                     Text(error)
@@ -173,6 +181,12 @@ struct JSONExportContent: View {
                 }
             }
         }
+        .exportProgress(
+            isPresented: exportViewModel.showProgressModal,
+            exportType: exportViewModel.progressViewExportType,
+            progress: exportViewModel.exportProgress,
+            totalItems: exportViewModel.totalItemsToExport
+        )
         .sheet(isPresented: $exportViewModel.showShareSheet) {
             if let url = exportViewModel.exportedFileURL {
                 ShareSheet(items: [url])
@@ -240,19 +254,6 @@ struct VideoExportContent: View {
                 .disabled(exportViewModel.isExporting || session.locationPoints.isEmpty)
             }
 
-            if exportViewModel.isExporting {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ProgressView(value: exportViewModel.exportProgress) {
-                            Text("Rendering video...")
-                        }
-                        Text("This may take a few minutes for high resolution videos.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
             if let error = exportViewModel.errorMessage {
                 Section {
                     Text(error)
@@ -266,6 +267,12 @@ struct VideoExportContent: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .exportProgress(
+            isPresented: exportViewModel.showProgressModal,
+            exportType: exportViewModel.progressViewExportType,
+            progress: exportViewModel.exportProgress,
+            totalItems: exportViewModel.totalItemsToExport
+        )
         .sheet(isPresented: $exportViewModel.showShareSheet) {
             if let url = exportViewModel.exportedFileURL {
                 ShareSheet(items: [url])
@@ -276,6 +283,7 @@ struct VideoExportContent: View {
 
 // MARK: - Share Sheet
 
+#if os(iOS)
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
 
@@ -285,6 +293,44 @@ struct ShareSheet: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
+#elseif os(macOS)
+struct ShareSheet: View {
+    let items: [Any]
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Export Complete")
+                .font(.headline)
+
+            if let url = items.first as? URL {
+                Text("File saved to:")
+                    .font(.subheadline)
+                Text(url.lastPathComponent)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 12) {
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Share...") {
+                        let picker = NSSharingServicePicker(items: items)
+                        if let window = NSApp.keyWindow,
+                           let contentView = window.contentView {
+                            picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 300, minHeight: 150)
+    }
+}
+#endif
 
 #Preview {
     ExportMenuButton(

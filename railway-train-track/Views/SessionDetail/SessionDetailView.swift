@@ -9,6 +9,13 @@ import MapKit
 import SwiftData
 import SwiftUI
 
+// MARK: - Presentation Mode
+
+enum PresentationMode {
+    case sheet   // iPhone: present content via .sheet()
+    case column  // iPad/Mac: content displayed in third column by parent
+}
+
 struct SessionDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(TrackingViewModel.self) private var trackingViewModel
@@ -16,8 +23,24 @@ struct SessionDetailView: View {
     @State private var viewModel: SessionDetailViewModel
     @State private var exportViewModel = ExportViewModel()
 
-    init(session: TrackingSession) {
-        _viewModel = State(initialValue: SessionDetailViewModel(session: session))
+    let presentationMode: PresentationMode
+
+    // For column mode: expose viewModel for parent to share with DetailColumnView
+    var sharedViewModel: SessionDetailViewModel {
+        viewModel
+    }
+
+    var sharedExportViewModel: ExportViewModel {
+        exportViewModel
+    }
+
+    init(session: TrackingSession, presentationMode: PresentationMode = .sheet, externalViewModel: SessionDetailViewModel? = nil) {
+        self.presentationMode = presentationMode
+        if let external = externalViewModel {
+            _viewModel = State(initialValue: external)
+        } else {
+            _viewModel = State(initialValue: SessionDetailViewModel(session: session))
+        }
     }
 
     private var sheetBinding: Binding<SheetContent?> {
@@ -32,8 +55,8 @@ struct SessionDetailView: View {
             cameraPosition: $viewModel.mapCameraPosition,
             currentCoordinate: viewModel.interpolatedCoordinate,
             animationDuration: viewModel.playbackAnimationDuration,
-            routeCoordinates: viewModel.session.coordinates,
-            traveledCoordinates: viewModel.traveledCoordinates,
+            routeCoordinates: viewModel.displayCoordinates,
+            traveledCoordinates: viewModel.simplifiedTraveledCoordinates,
             markers: viewModel.staticMarkers,
             railwayRoutes: viewModel.showRailroad ? viewModel.stationDataViewModel.railwayRoutes : [],
             markerStyle: .currentPosition,
@@ -42,13 +65,15 @@ struct SessionDetailView: View {
             cameraDistance: viewModel.playbackCameraDistance,
             onCameraDistanceChanged: { newDistance in
                 viewModel.playbackCameraDistance = newDistance
+                viewModel.handleCameraDistanceChange(newDistance)
             },
             onLongPress: { coordinate in
                 viewModel.handleMapLongPress(coordinate)
             },
             onMarkerTap: { marker in
                 viewModel.handleMarkerTap(marker)
-            }
+            },
+            cameraTrigger: viewModel.cameraTrigger
         )
         .ignoresSafeArea()
     }
@@ -56,38 +81,80 @@ struct SessionDetailView: View {
     private var toolbarContent: some View {
         HStack(spacing: 16) {
             Button {
-                viewModel.addNoteAtCurrentPlaybackPosition()
+                if presentationMode == .sheet {
+                    viewModel.addNoteAtCurrentPlaybackPosition()
+                } else {
+                    // For column mode, open note editor in sheet
+                    if let coord = viewModel.interpolatedCoordinate ?? viewModel.sortedLocationPoints.first?.coordinate {
+                        let context = NoteEditorContext(
+                            coordinate: coord,
+                            linkedStationEvent: nil,
+                            linkedStation: nil,
+                            existingNote: nil
+                        )
+                        viewModel.toolbarSheetContent = .noteEditor(context)
+                    }
+                }
             } label: {
                 Image(systemName: "note.text.badge.plus")
             }
 
             Button {
-                viewModel.sheetContent = .playbackSettings
+                if presentationMode == .sheet {
+                    viewModel.sheetContent = .playbackSettings
+                } else {
+                    viewModel.toolbarSheetContent = .playbackSettings
+                }
             } label: {
                 Image(systemName: "slider.horizontal.3")
             }
 
             ExportMenuButton(
                 viewModel: viewModel,
-                exportViewModel: exportViewModel
+                exportViewModel: exportViewModel,
+                presentationMode: presentationMode
             )
         }
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             mapView
+
+            // Show playback controls on map in column mode (iPad/Mac)
+            if presentationMode == .column {
+                PlaybackControlsView(viewModel: viewModel)
+                    .padding(.bottom, 8)
+                    .padding(.horizontal)
+            }
         }
-        .sheet(item: sheetBinding) { content in
-            sheetView(for: content)
+        .modifier(ConditionalSheetModifier(
+            presentationMode: presentationMode,
+            sheetBinding: sheetBinding,
+            viewModel: viewModel,
+            exportViewModel: exportViewModel
+        ))
+        .sheet(item: $viewModel.toolbarSheetContent) { content in
+            NavigationStack {
+                toolbarSheetView(for: content)
+            }
+            .interactiveDismissDisabled()
         }
         .toolbar {
+            #if os(iOS)
             ToolbarItem(placement: .topBarTrailing) {
                 toolbarContent
             }
+            #else
+            ToolbarItem(placement: .automatic) {
+                toolbarContent
+            }
+            #endif
         }
         .navigationTitle(viewModel.session.name)
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .onAppear {
             viewModel.setModelContext(modelContext)
             exportViewModel.setDefaultFilename(from: viewModel.session)
@@ -106,142 +173,113 @@ struct SessionDetailView: View {
         .presentationBackgroundInteraction(content.isTabBar ? .enabled : .disabled)
         .interactiveDismissDisabled()
     }
-}
 
-// MARK: - Sheet Content View
-
-struct SheetContentView: View {
-    let content: SheetContent
-    @Bindable var viewModel: SessionDetailViewModel
-    @Bindable var exportViewModel: ExportViewModel
-
-    var body: some View {
+    @ViewBuilder
+    private func toolbarSheetView(for content: ToolbarSheetContent) -> some View {
         switch content {
-        case .tabBar:
-            SessionSheetContent(viewModel: viewModel, exportViewModel: exportViewModel)
-
         case .playbackSettings:
-            NavigationStack {
-                PlaybackSettingsContent(viewModel: viewModel)
-                    .navigationTitle("Playback Settings")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") {
-                                viewModel.sheetContent = .tabBar
-                            }
-                        }
-                    }
-            }
-
-        case .stationSearch:
-            NavigationStack {
-                StationSearchContent(
-                    viewModel: viewModel,
-                    stationDataViewModel: viewModel.stationDataViewModel
-                )
-                .navigationTitle("Add Station")
+            PlaybackSettingsContent(viewModel: viewModel)
+                .navigationTitle("Playback Settings")
+                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
+                #endif
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
-                            viewModel.sheetContent = .tabBar
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            viewModel.toolbarSheetContent = nil
                         }
                     }
                 }
-            }
-
         case .exportCSV:
-            NavigationStack {
-                CSVExportContent(
-                    session: viewModel.session,
-                    exportType: viewModel.selectedTab,
-                    exportViewModel: exportViewModel
-                )
-                .navigationTitle("Export CSV")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
-                            viewModel.sheetContent = .tabBar
-                        }
+            CSVExportContent(
+                session: viewModel.session,
+                exportType: viewModel.selectedTab,
+                exportViewModel: exportViewModel
+            )
+            .navigationTitle("Export CSV")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        viewModel.toolbarSheetContent = nil
                     }
                 }
             }
-
         case .exportJSON:
-            NavigationStack {
-                JSONExportContent(
-                    session: viewModel.session,
-                    exportType: viewModel.selectedTab,
-                    exportViewModel: exportViewModel
-                )
-                .navigationTitle("Export JSON")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
-                            viewModel.sheetContent = .tabBar
-                        }
+            JSONExportContent(
+                session: viewModel.session,
+                exportType: viewModel.selectedTab,
+                exportViewModel: exportViewModel
+            )
+            .navigationTitle("Export JSON")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        viewModel.toolbarSheetContent = nil
                     }
                 }
             }
-
         case .exportVideo:
-            NavigationStack {
-                VideoExportContent(
-                    session: viewModel.session,
-                    exportViewModel: exportViewModel
-                )
-                .navigationTitle("Export Video")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") {
-                            viewModel.sheetContent = .tabBar
-                        }
+            VideoExportContent(
+                session: viewModel.session,
+                exportViewModel: exportViewModel
+            )
+            .navigationTitle("Export Video")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        viewModel.toolbarSheetContent = nil
                     }
                 }
             }
-
         case .noteEditor(let context):
             NoteEditorView(context: context, viewModel: viewModel)
-
-        case .noteDetail(let note):
-            NoteDetailView(note: note, viewModel: viewModel)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            viewModel.toolbarSheetContent = nil
+                        }
+                    }
+                }
         }
     }
 }
 
-// MARK: - Sheet Content
+// MARK: - Conditional Sheet Modifier
 
-struct SessionSheetContent: View {
-    @Bindable var viewModel: SessionDetailViewModel
-    @Bindable var exportViewModel: ExportViewModel
+/// A view modifier that conditionally applies sheet presentation based on presentation mode.
+/// In sheet mode (iPhone), presents content as a sheet.
+/// In column mode (iPad/Mac), does nothing as content is displayed in the third column.
+struct ConditionalSheetModifier: ViewModifier {
+    let presentationMode: PresentationMode
+    let sheetBinding: Binding<SheetContent?>
+    let viewModel: SessionDetailViewModel
+    let exportViewModel: ExportViewModel
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Tab picker
-            Picker("Tab", selection: $viewModel.selectedTab) {
-                ForEach(SessionTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
+    func body(content: Content) -> some View {
+        if presentationMode == .sheet {
+            content
+                .sheet(item: sheetBinding) { sheetContent in
+                    SheetContentView(
+                        content: sheetContent,
+                        viewModel: viewModel,
+                        exportViewModel: exportViewModel
+                    )
+                    .presentationDetents(sheetContent.isTabBar ? [.height(300), .medium, .large] : [.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(sheetContent.isTabBar ? .enabled : .disabled)
+                    .interactiveDismissDisabled()
                 }
-            }
-            .pickerStyle(.segmented)
-            .padding()
-
-            // Tab content
-            switch viewModel.selectedTab {
-            case .locations:
-                LocationsTabView(viewModel: viewModel)
-                    .tag(SessionTab.locations)
-            case .stations:
-                StationsTabView(viewModel: viewModel)
-                    .tag(SessionTab.stations)
-            case .notes:
-                NotesTabView(viewModel: viewModel)
-                    .tag(SessionTab.notes)
-            }
+        } else {
+            content
         }
     }
 }

@@ -22,10 +22,12 @@ struct PlaybackSettingsContent: View {
                             .font(.subheadline)
                         Spacer()
                         TextField("30", text: $durationText)
+                        #if os(iOS)
                             .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
+                        #endif
+                            .multilineTextAlignment(TextAlignment.trailing)
                             .frame(width: 80)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
                             .focused($isDurationFieldFocused)
                             .onChange(of: durationText) { _, newValue in
                                 if let value = Double(newValue), value > 0 {
@@ -91,6 +93,9 @@ struct PlaybackSettingsContent: View {
                     .foregroundStyle(.secondary)
             }
         }
+        #if os(macOS)
+        .formStyle(.grouped)
+        #endif
         .onAppear {
             durationText = "\(Int(viewModel.playbackDurationSeconds))"
         }

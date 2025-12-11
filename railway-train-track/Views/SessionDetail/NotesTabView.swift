@@ -39,7 +39,9 @@ struct NotesTabView: View {
                 }
                 .scrollContentBackground(.hidden)
                 .listStyle(.sidebar)
+                #if os(iOS)
                 .environment(\.editMode, .constant(isEditing ? .active : .inactive))
+                #endif
             }
         }
         .alert("Delete Note?", isPresented: $showDeleteConfirmation, presenting: noteToDelete) { note in
@@ -54,6 +56,7 @@ struct NotesTabView: View {
             Text("Are you sure you want to delete this note? This action cannot be undone.")
         }
         .toolbar {
+            #if os(iOS)
             ToolbarItemGroup(placement: .bottomBar) {
                 Button {
                     viewModel.addNoteAtCurrentPlaybackPosition()
@@ -69,6 +72,23 @@ struct NotesTabView: View {
                     }
                 }
             }
+            #else
+            ToolbarItem(placement: .automatic) {
+                HStack {
+                    Button {
+                        viewModel.addNoteAtCurrentPlaybackPosition()
+                    } label: {
+                        Label("Add Note", systemImage: "plus")
+                    }
+
+                    if !viewModel.sortedNotes.isEmpty {
+                        Button(isEditing ? "Done" : "Edit") {
+                            isEditing.toggle()
+                        }
+                    }
+                }
+            }
+            #endif
         }
     }
 }
